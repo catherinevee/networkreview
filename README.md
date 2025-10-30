@@ -37,6 +37,7 @@ Detailed explanations of how various networking protocols and technologies work:
 
 Architecture, design, and operational best practices for various platforms:
 
+- **Cloud Platforms Comparison** - Comprehensive comparison of GCP, AWS, and Azure networking
 - **Azure Networking** - General networking best practices for Microsoft Azure
 - **Azure Networking Security** - Security-focused networking best practices for Azure
 - **Azure Security** - Overall security best practices for Azure
@@ -85,6 +86,7 @@ Core networking concepts and fundamentals:
 
 | Document | Description | Key Topics |
 |----------|-------------|------------|
+| [cloud-platforms-comparison.txt](cloud-platforms-comparison.txt) | GCP vs AWS vs Azure | VPC/VNet comparison, connectivity, security, load balancing, DNS, pricing |
 | [azure-networking-best-practices.txt](azure-networking-best-practices.txt) | Azure Network Design | VNet design, hub-spoke, load balancing, DNS |
 | [azure-networking-security-best-practices.txt](azure-networking-security-best-practices.txt) | Azure Network Security | NSGs, Azure Firewall, Private Endpoints, DDoS protection |
 | [azure-security-best-practices.txt](azure-security-best-practices.txt) | Azure Security | Identity, network security, data protection, monitoring |
@@ -141,6 +143,7 @@ Core networking concepts and fundamentals:
 - Each vendor document includes configuration examples and command references
 
 **By Use Case:**
+- Choosing a cloud platform: See cloud platforms comparison
 - Designing cloud networks: See Azure or GCP best practices
 - Troubleshooting routing: See BGP or IS-IS documentation
 - Configuring switches: See vendor CLI commands
@@ -189,15 +192,18 @@ Most documents follow this structure:
 
 ### Cloud Network Architect
 
-1. Cloud platform networking:
+1. Platform comparison and selection:
+   - [cloud-platforms-comparison.txt](cloud-platforms-comparison.txt)
+
+2. Cloud platform networking:
    - [azure-networking-best-practices.txt](azure-networking-best-practices.txt)
    - [gcp-networking-best-practices.txt](gcp-networking-best-practices.txt)
 
-2. Security best practices:
+3. Security best practices:
    - [azure-networking-security-best-practices.txt](azure-networking-security-best-practices.txt)
    - [azure-security-best-practices.txt](azure-security-best-practices.txt)
 
-3. Hybrid connectivity:
+4. Hybrid connectivity:
    - Review VPN and interconnect sections in cloud guides
    - [bgp-how-it-works.txt](bgp-how-it-works.txt) for dynamic routing
 
@@ -249,12 +255,18 @@ Most documents follow this structure:
 
 ### Cloud Certifications
 
+**Multi-Cloud Architect:**
+- Cloud platforms comparison
+
 **Azure Network Engineer Associate:**
 - Azure networking best practices
 - Azure networking security best practices
 
 **Google Cloud Professional Network Engineer:**
 - GCP networking best practices
+
+**AWS Certified Advanced Networking - Specialty:**
+- Cloud platforms comparison (AWS sections)
 
 ## Contributing
 
@@ -283,9 +295,9 @@ Each document contains extensive references to:
 
 ## Document Statistics
 
-- Total documents: 21
+- Total documents: 22
 - Protocol explanations: 6
-- Best practices guides: 6
+- Best practices guides: 7
 - Vendor CLI guides: 9
 - Foundational concepts: 2
 
