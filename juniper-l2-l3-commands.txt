@@ -1,0 +1,370 @@
+Juniper CLI Commands for Layer 2 and Layer 3 Configuration
+=============================================================
+
+This document provides common Juniper Junos CLI commands for configuring Layer 2 and Layer 3 functionality on Juniper network devices.
+
+Basic CLI Navigation
+--------------------
+
+# Enter configuration mode
+configure
+
+# Show configuration
+show configuration
+
+# Commit changes
+commit
+
+# Commit and quit
+commit and-quit
+
+# Show candidate configuration differences
+show | compare
+
+# Exit configuration mode
+exit
+
+# Rollback to previous configuration
+rollback 0    # Discard candidate config
+rollback 1    # Rollback to previous commit
+
+Layer 2 Configuration
+---------------------
+
+### Interface Configuration (Access Mode)
+
+# Configure interface as Layer 2 access port
+set interfaces ge-0/0/0 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/0 unit 0 family ethernet-switching vlan members vlan-100
+
+# Configure interface description
+set interfaces ge-0/0/0 description "Access Port to Workstation"
+
+# Disable interface
+set interfaces ge-0/0/0 disable
+
+# Enable interface (remove disable statement)
+delete interfaces ge-0/0/0 disable
+
+### Interface Configuration (Trunk Mode)
+
+# Configure interface as Layer 2 trunk port
+set interfaces ge-0/0/1 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/1 unit 0 family ethernet-switching vlan members [vlan-100 vlan-200 vlan-300]
+
+# Configure native VLAN on trunk
+set interfaces ge-0/0/1 native-vlan-id 1
+
+### VLAN Configuration
+
+# Create VLAN
+set vlans vlan-100 vlan-id 100
+set vlans vlan-100 description "Engineering Department"
+
+# Create VLAN with Layer 3 interface (IRB)
+set vlans vlan-100 vlan-id 100
+set vlans vlan-100 l3-interface irb.100
+
+# Configure multiple VLANs
+set vlans vlan-200 vlan-id 200 description "Sales Department"
+set vlans vlan-300 vlan-id 300 description "Guest Network"
+
+### Spanning Tree Protocol (STP)
+
+# Enable RSTP globally
+set protocols rstp
+
+# Configure bridge priority (lower is better, default 32768)
+set protocols rstp bridge-priority 4k
+
+# Enable RSTP on interface
+set protocols rstp interface ge-0/0/0
+
+# Configure port cost
+set protocols rstp interface ge-0/0/0 cost 20000
+
+# Configure edge port (portfast equivalent)
+set protocols rstp interface ge-0/0/0 edge
+
+# Disable RSTP on interface
+set protocols rstp interface ge-0/0/1 disable
+
+### Link Aggregation (LAG/LACP)
+
+# Create aggregated ethernet interface
+set interfaces ae0 description "Link Aggregation to Core Switch"
+set interfaces ae0 aggregated-ether-options lacp active
+
+# Add member interfaces to LAG
+set interfaces ge-0/0/2 ether-options 802.3ad ae0
+set interfaces ge-0/0/3 ether-options 802.3ad ae0
+
+# Configure LAG as trunk
+set interfaces ae0 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ae0 unit 0 family ethernet-switching vlan members all
+
+### MAC Address Table
+
+# Configure static MAC address
+set vlans vlan-100 switch-options static-mac 00:11:22:33:44:55 interface ge-0/0/0
+
+# Set MAC aging time (default 300 seconds)
+set vlans vlan-100 switch-options mac-table-aging-time 600
+
+# Show MAC address table
+show ethernet-switching table
+
+### Storm Control
+
+# Configure broadcast storm control
+set interfaces ge-0/0/0 unit 0 family ethernet-switching storm-control broadcast-level 80
+
+# Configure multicast and unknown unicast storm control
+set interfaces ge-0/0/0 unit 0 family ethernet-switching storm-control multicast-level 80
+set interfaces ge-0/0/0 unit 0 family ethernet-switching storm-control unknown-unicast-level 80
+
+Layer 3 Configuration
+---------------------
+
+### Interface Configuration (Routed/Layer 3)
+
+# Configure Layer 3 interface
+set interfaces ge-0/0/10 unit 0 family inet address 192.168.1.1/24
+set interfaces ge-0/0/10 description "Layer 3 Interface to Router"
+
+# Configure IPv6 address
+set interfaces ge-0/0/10 unit 0 family inet6 address 2001:db8::1/64
+
+# Configure secondary IP address
+set interfaces ge-0/0/10 unit 0 family inet address 192.168.1.2/24
+
+### IRB (Integrated Routing and Bridging) - VLAN Interface
+
+# Configure IRB interface (SVI equivalent)
+set interfaces irb unit 100 family inet address 10.100.0.1/24
+set interfaces irb unit 100 description "Gateway for VLAN 100"
+
+# Associate IRB with VLAN
+set vlans vlan-100 vlan-id 100
+set vlans vlan-100 l3-interface irb.100
+
+# Configure VRRP on IRB for redundancy
+set interfaces irb unit 100 family inet address 10.100.0.2/24 vrrp-group 1 virtual-address 10.100.0.1
+set interfaces irb unit 100 family inet address 10.100.0.2/24 vrrp-group 1 priority 150
+
+### Static Routes
+
+# Configure static route
+set routing-options static route 0.0.0.0/0 next-hop 192.168.1.254
+
+# Configure static route with preference (administrative distance)
+set routing-options static route 10.0.0.0/8 next-hop 192.168.1.253 preference 5
+
+# Configure static route with qualified next-hop (floating static)
+set routing-options static route 0.0.0.0/0 qualified-next-hop 192.168.1.253 preference 200
+
+# Show routing table
+show route
+
+### Dynamic Routing - OSPF
+
+# Configure OSPF
+set protocols ospf area 0.0.0.0 interface ge-0/0/10.0
+set protocols ospf area 0.0.0.0 interface irb.100
+
+# Configure OSPF router ID
+set routing-options router-id 1.1.1.1
+
+# Configure OSPF interface as passive
+set protocols ospf area 0.0.0.0 interface irb.100 passive
+
+# Configure OSPF interface cost
+set protocols ospf area 0.0.0.0 interface ge-0/0/10.0 metric 100
+
+# Configure OSPF authentication
+set protocols ospf area 0.0.0.0 interface ge-0/0/10.0 authentication md5 1 key "secretkey"
+
+# Show OSPF neighbors
+show ospf neighbor
+
+# Show OSPF database
+show ospf database
+
+### Dynamic Routing - BGP
+
+# Configure BGP
+set protocols bgp group external-peers type external
+set protocols bgp group external-peers peer-as 65001
+set protocols bgp group external-peers neighbor 192.168.1.254
+
+# Configure local AS
+set routing-options autonomous-system 65000
+
+# Configure BGP authentication
+set protocols bgp group external-peers neighbor 192.168.1.254 authentication-key "bgpsecret"
+
+# Show BGP summary
+show bgp summary
+
+# Show BGP neighbors
+show bgp neighbor
+
+### Access Control Lists (ACLs/Firewall Filters)
+
+# Configure firewall filter
+set firewall family inet filter protect-re term accept-ssh from protocol tcp
+set firewall family inet filter protect-re term accept-ssh from destination-port 22
+set firewall family inet filter protect-re term accept-ssh then accept
+
+set firewall family inet filter protect-re term deny-all then discard
+
+# Apply filter to interface (inbound)
+set interfaces ge-0/0/10 unit 0 family inet filter input protect-re
+
+# Apply filter to loopback (protect routing engine)
+set interfaces lo0 unit 0 family inet filter input protect-re
+
+### NAT Configuration (Source NAT/PAT)
+
+# Configure source NAT pool
+set security nat source pool internet-pool address 203.0.113.10/32 to 203.0.113.20/32
+
+# Configure source NAT rule
+set security nat source rule-set trust-to-internet from zone trust
+set security nat source rule-set trust-to-internet to zone internet
+set security nat source rule-set trust-to-internet rule nat-rule match source-address 10.0.0.0/8
+set security nat source rule-set trust-to-internet rule nat-rule then source-nat pool internet-pool
+
+### Virtual Router Configuration (Multiple VRFs)
+
+# Create routing instance (VRF)
+set routing-instances VRF-CUSTOMER instance-type vrf
+set routing-instances VRF-CUSTOMER interface ge-0/0/15.0
+set routing-instances VRF-CUSTOMER route-distinguisher 65000:100
+set routing-instances VRF-CUSTOMER vrf-target target:65000:100
+
+# Configure static route in VRF
+set routing-instances VRF-CUSTOMER routing-options static route 0.0.0.0/0 next-hop 172.16.1.254
+
+# Show routing table for specific VRF
+show route table VRF-CUSTOMER.inet.0
+
+### DHCP Relay
+
+# Configure DHCP relay on IRB interface
+set forwarding-options dhcp-relay server-group dhcp-servers 10.0.0.10
+set forwarding-options dhcp-relay active-server-group dhcp-servers
+set forwarding-options dhcp-relay group dhcp-relay-group active-server-group dhcp-servers
+set forwarding-options dhcp-relay group dhcp-relay-group interface irb.100
+
+Verification and Troubleshooting Commands
+------------------------------------------
+
+### Layer 2 Verification
+
+# Show VLAN information
+show vlans
+show vlans detail
+
+# Show ethernet switching interfaces
+show ethernet-switching interfaces
+
+# Show MAC address table
+show ethernet-switching table
+
+# Show LACP status
+show lacp interfaces
+show interfaces ae0
+
+# Show spanning tree
+show spanning-tree interface
+show spanning-tree bridge
+
+### Layer 3 Verification
+
+# Show interface status
+show interfaces terse
+show interfaces ge-0/0/10 detail
+
+# Show IP addresses
+show interfaces terse | match inet
+
+# Show routing table
+show route
+show route protocol ospf
+show route protocol bgp
+
+# Show ARP table
+show arp
+
+# Show IPv6 neighbors
+show ipv6 neighbors
+
+# Test connectivity
+ping 8.8.8.8
+ping 8.8.8.8 source 192.168.1.1 count 5
+
+traceroute 8.8.8.8
+
+# Show system information
+show version
+show system uptime
+show chassis hardware
+
+# Monitor real-time logs
+monitor start messages
+monitor stop
+
+# Show firewall filter counters
+show firewall filter protect-re
+
+Documentation References
+------------------------
+
+[1] Juniper Networks. (2024). Junos OS CLI Reference.
+    https://www.juniper.net/documentation/us/en/software/junos/cli/
+    Official CLI command reference for Junos OS.
+
+[2] Juniper Networks. (2024). Junos OS Network Interfaces Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/interfaces/
+    Comprehensive guide for configuring network interfaces.
+
+[3] Juniper Networks. (2024). Junos OS Layer 2 Switching Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/multicast-l2/
+    Detailed information on VLANs, STP, and Layer 2 features.
+
+[4] Juniper Networks. (2024). Junos OS Routing Protocols Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/routing-overview/
+    Configuration guidance for OSPF, BGP, and other routing protocols.
+
+[5] Juniper Networks. (2024). Junos OS Administration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/junos-overview/
+    System administration and basic configuration.
+
+[6] Day One: Juniper Networks Cookbook. Juniper Networks.
+    https://www.juniper.net/us/en/training/jnbooks/day-one/
+    Practical configuration examples and best practices.
+
+[7] Juniper Networks Certified Associate Junos (JNCIA-Junos) Study Guide.
+    Official certification guide covering fundamental Junos concepts.
+
+[8] Garrett, P., & Woodberg, B. (2012). Juniper MX Series.
+    O'Reilly Media. Comprehensive coverage of Junos configuration.
+
+[9] Juniper Networks. (2024). Junos OS Security Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/security-services/
+    Security features including firewall filters and NAT.
+
+[10] Juniper TechLibrary - Knowledge Base.
+     https://supportportal.juniper.net/s/knowledge
+     Troubleshooting articles and configuration examples.
+
+Notes
+-----
+
+- All commands shown use the "set" style configuration syntax
+- Always commit changes for them to take effect: commit
+- Use "commit check" to validate configuration before committing
+- Use "show | compare" to see pending changes before committing
+- Configuration can be saved to file: show configuration | save /var/tmp/config.txt
+- Load configuration from file: load override /var/tmp/config.txt (or load merge, load patch)

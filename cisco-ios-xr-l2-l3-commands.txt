@@ -1,0 +1,948 @@
+Cisco IOS-XR CLI Commands for Layer 2 and Layer 3 Configuration
+==================================================================
+
+This document provides common Cisco IOS-XR CLI commands for configuring Layer 2 and Layer 3 functionality on Cisco carrier-class routers and switches (ASR 9000, NCS series, CRS series).
+
+Basic CLI Navigation
+--------------------
+
+# Enter configuration mode
+configure
+configure terminal
+
+# Exit configuration mode
+end
+exit
+
+# Commit configuration changes (required in IOS-XR)
+commit
+
+# Commit with comment
+commit comment "Added VLAN 100 configuration"
+
+# Commit best-effort (commits valid changes, ignores errors)
+commit best-effort
+
+# Show configuration changes before committing
+show configuration
+show configuration commit changes last 1
+
+# Discard uncommitted changes
+abort
+
+# Show running configuration
+show running-config
+
+# Show committed configuration
+show configuration running-config
+
+# Clear configuration changes
+clear configuration inconsistency
+
+# Configuration rollback
+rollback configuration last 1
+rollback configuration to commit-id <id>
+
+# Show commit history
+show configuration history
+
+# Configuration sessions
+configure exclusive  # Lock configuration for exclusive access
+configure private    # Private configuration session
+
+Layer 2 Configuration
+---------------------
+
+### Basic Layer 2 Interface Configuration
+
+# Configure Layer 2 interface
+interface TenGigE0/0/0/1
+ description Access Port to Server
+ l2transport
+ no shutdown
+!
+commit
+
+# Configure 802.1Q encapsulation
+interface TenGigE0/0/0/1.100 l2transport
+ description VLAN 100 Subinterface
+ encapsulation dot1q 100
+ rewrite ingress tag pop 1 symmetric
+!
+commit
+
+### Bridge Domain Configuration (VPLS/L2VPN)
+
+# Create bridge domain
+l2vpn
+ bridge group BG1
+  bridge-domain BD100
+   interface TenGigE0/0/0/1.100
+   !
+   routed interface BVI100
+   !
+  !
+ !
+!
+commit
+
+# Configure Bridge Virtual Interface (BVI)
+interface BVI100
+ description SVI for Bridge Domain 100
+ ipv4 address 10.100.0.1 255.255.255.0
+ no shutdown
+!
+commit
+
+### MAC Address Configuration
+
+# Configure static MAC address in bridge domain
+l2vpn
+ bridge group BG1
+  bridge-domain BD100
+   mac
+    static-address 0011.2233.4455 TenGigE0/0/0/1.100
+   !
+  !
+ !
+!
+commit
+
+# Show MAC address table
+show l2vpn forwarding bridge-domain BD100 mac-address location 0/0/CPU0
+
+# Configure MAC aging time
+l2vpn
+ bridge group BG1
+  bridge-domain BD100
+   mac
+    aging-time 600
+   !
+  !
+ !
+!
+commit
+
+### Spanning Tree Protocol
+
+# IOS-XR uses IEEE 802.1D/802.1w in bridge domains
+# Configure RSTP in bridge domain
+l2vpn
+ bridge group BG1
+  bridge-domain BD100
+   spanning-tree mode rstp
+  !
+ !
+!
+commit
+
+# Show spanning tree information
+show spanning-tree bridge-domain BD100
+
+### Link Aggregation (Bundle Interfaces)
+
+# Configure bundle interface with LACP
+interface Bundle-Ether1
+ description Link Aggregation to Core
+ bundle minimum-active links 1
+ bundle maximum-active links 8
+ no shutdown
+!
+commit
+
+# Add member interfaces to bundle
+interface TenGigE0/0/0/2
+ description Member of Bundle-Ether1
+ bundle id 1 mode active
+ no shutdown
+!
+
+interface TenGigE0/0/0/3
+ description Member of Bundle-Ether1
+ bundle id 1 mode active
+ no shutdown
+!
+commit
+
+# Configure bundle as Layer 2
+interface Bundle-Ether1.100 l2transport
+ encapsulation dot1q 100
+!
+commit
+
+# Show bundle information
+show bundle Bundle-Ether1
+show lacp bundle Bundle-Ether1
+
+### L2VPN VPWS (Point-to-Point)
+
+# Configure VPWS (Virtual Private Wire Service)
+l2vpn
+ xconnect group XC-GROUP1
+  p2p CUSTOMER-A
+   interface TenGigE0/0/0/1.100
+   neighbor ipv4 10.1.1.2 pw-id 100
+    mpls static label local 1000 remote 1001
+   !
+  !
+ !
+!
+commit
+
+# Show L2VPN status
+show l2vpn xconnect
+show l2vpn xconnect detail
+
+### L2VPN VPLS (Multipoint)
+
+# Configure VPLS
+l2vpn
+ bridge group BG1
+  bridge-domain VPLS-100
+   interface TenGigE0/0/0/1.100
+   !
+   vfi VFI-VPLS-100
+    neighbor 10.1.1.2 pw-id 100
+    neighbor 10.1.1.3 pw-id 101
+   !
+  !
+ !
+!
+commit
+
+# Show VPLS information
+show l2vpn bridge-domain
+show l2vpn forwarding bridge-domain VPLS-100 detail
+
+### Ethernet Flow Point (EFP) and Service Instances
+
+# Configure EFP with service instance
+interface TenGigE0/0/0/4
+ description EFP Configuration
+!
+ l2transport
+  service-policy input QOS-IN
+  service-policy output QOS-OUT
+!
+commit
+
+interface TenGigE0/0/0/4.100 l2transport
+ encapsulation dot1q 100
+ rewrite ingress tag pop 1 symmetric
+!
+commit
+
+Layer 3 Configuration
+---------------------
+
+### Interface Configuration (Routed/Layer 3)
+
+# Configure Layer 3 interface
+interface TenGigE0/0/0/10
+ description Layer 3 Interface to Router
+ ipv4 address 192.168.1.1 255.255.255.0
+ ipv6 address 2001:db8::1/64
+ no shutdown
+!
+commit
+
+# Configure secondary IP address
+interface TenGigE0/0/0/10
+ ipv4 address 192.168.1.1 255.255.255.0
+ ipv4 address 192.168.1.2 255.255.255.0 secondary
+!
+commit
+
+# Configure unnumbered interface
+interface TenGigE0/0/0/11
+ ipv4 point-to-point
+ ipv4 unnumbered Loopback0
+!
+commit
+
+# Configure loopback interface
+interface Loopback0
+ description Router ID and Management
+ ipv4 address 1.1.1.1 255.255.255.255
+ ipv6 address 2001:db8:ffff::1/128
+!
+commit
+
+### Static Routes
+
+# Configure IPv4 static route
+router static
+ address-family ipv4 unicast
+  0.0.0.0/0 192.168.1.254
+  10.0.0.0/8 192.168.1.253
+ !
+!
+commit
+
+# Configure static route with specific metric and tag
+router static
+ address-family ipv4 unicast
+  172.16.0.0/12 192.168.1.252 metric 100 tag 200
+ !
+!
+commit
+
+# Configure IPv6 static route
+router static
+ address-family ipv6 unicast
+  ::/0 2001:db8::254
+ !
+!
+commit
+
+# Show routing table
+show route
+show route ipv4
+show route ipv6
+
+### VRF (Virtual Routing and Forwarding)
+
+# Create VRF
+vrf CUSTOMER-A
+ address-family ipv4 unicast
+  import route-target
+   65000:100
+  !
+  export route-target
+   65000:100
+  !
+ !
+ address-family ipv6 unicast
+  import route-target
+   65000:100
+  !
+  export route-target
+   65000:100
+  !
+ !
+!
+commit
+
+# Assign interface to VRF
+interface TenGigE0/0/0/15
+ vrf CUSTOMER-A
+ ipv4 address 172.16.1.1 255.255.255.0
+ no shutdown
+!
+commit
+
+# Configure static route in VRF
+router static
+ vrf CUSTOMER-A
+  address-family ipv4 unicast
+   0.0.0.0/0 172.16.1.254
+  !
+ !
+!
+commit
+
+# Show VRF information
+show vrf all
+show route vrf CUSTOMER-A
+
+# Ping from VRF
+ping vrf CUSTOMER-A 172.16.1.254
+
+### Dynamic Routing - OSPF
+
+# Configure OSPF
+router ospf 1
+ router-id 1.1.1.1
+ area 0
+  interface Loopback0
+   passive enable
+  !
+  interface TenGigE0/0/0/10
+   cost 100
+   network point-to-point
+  !
+ !
+!
+commit
+
+# Configure OSPF authentication
+router ospf 1
+ area 0
+  authentication message-digest
+  interface TenGigE0/0/0/10
+   authentication message-digest keychain OSPF-KEYS
+  !
+ !
+!
+
+key chain OSPF-KEYS
+ key 1
+  accept-lifetime 00:00:00 january 01 2024 infinite
+  key-string password 7 secretkey
+  send-lifetime 00:00:00 january 01 2024 infinite
+  cryptographic-algorithm md5
+ !
+!
+commit
+
+# Configure OSPFv3 for IPv6
+router ospfv3 1
+ router-id 1.1.1.1
+ area 0
+  interface TenGigE0/0/0/10
+  !
+ !
+!
+commit
+
+# Show OSPF information
+show ospf neighbor
+show ospf interface
+show ospf database
+show protocols ospf
+
+### Dynamic Routing - IS-IS
+
+# Configure IS-IS
+router isis CORE
+ is-type level-2-only
+ net 49.0001.0000.0000.0001.00
+ address-family ipv4 unicast
+  metric-style wide
+ !
+ address-family ipv6 unicast
+  metric-style wide
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+  address-family ipv6 unicast
+  !
+ !
+ interface TenGigE0/0/0/10
+  circuit-type level-2-only
+  point-to-point
+  address-family ipv4 unicast
+   metric 10
+  !
+  address-family ipv6 unicast
+   metric 10
+  !
+ !
+!
+commit
+
+# Configure IS-IS authentication
+router isis CORE
+ interface TenGigE0/0/0/10
+  hello-password keychain ISIS-KEYS
+  address-family ipv4 unicast
+  !
+ !
+!
+
+key chain ISIS-KEYS
+ key 1
+  key-string password 7 secretkey
+ !
+!
+commit
+
+# Show IS-IS information
+show isis neighbors
+show isis interface
+show isis database
+show isis topology
+
+### Dynamic Routing - BGP
+
+# Configure BGP
+router bgp 65000
+ bgp router-id 1.1.1.1
+ address-family ipv4 unicast
+  network 10.0.0.0/8
+ !
+ address-family ipv6 unicast
+ !
+ neighbor 192.168.1.254
+  remote-as 65001
+  description eBGP to ISP
+  password encrypted secretkey
+  address-family ipv4 unicast
+   route-policy IMPORT in
+   route-policy EXPORT out
+  !
+ !
+!
+commit
+
+# Configure iBGP with route reflector
+router bgp 65000
+ bgp router-id 1.1.1.1
+ address-family ipv4 unicast
+ !
+ neighbor 10.1.1.1
+  remote-as 65000
+  description iBGP to Core Router
+  update-source Loopback0
+  address-family ipv4 unicast
+   route-reflector-client
+  !
+ !
+!
+commit
+
+# Configure BGP VPNv4 for MPLS VPN
+router bgp 65000
+ address-family vpnv4 unicast
+ !
+ neighbor 10.1.1.1
+  remote-as 65000
+  update-source Loopback0
+  address-family vpnv4 unicast
+  !
+ !
+ vrf CUSTOMER-A
+  rd 65000:100
+  address-family ipv4 unicast
+   redistribute connected
+  !
+  neighbor 172.16.1.254
+   remote-as 65001
+   address-family ipv4 unicast
+    route-policy IMPORT in
+    route-policy EXPORT out
+   !
+  !
+ !
+!
+commit
+
+# Show BGP information
+show bgp summary
+show bgp neighbors
+show bgp vpnv4 unicast summary
+
+### Route Policy Configuration
+
+# Configure route policy for BGP
+route-policy IMPORT
+ if destination in (10.0.0.0/8 le 24) then
+   set local-preference 200
+   pass
+ else
+   drop
+ endif
+end-policy
+!
+
+route-policy EXPORT
+ if destination in PREFIX-SET-EXPORT then
+   set community (65000:100) additive
+   pass
+ else
+   drop
+ endif
+end-policy
+!
+
+prefix-set PREFIX-SET-EXPORT
+ 10.0.0.0/8 le 24,
+ 172.16.0.0/12 le 24
+end-set
+!
+commit
+
+# Show route policy
+show rpl route-policy IMPORT
+show bgp policy IMPORT
+
+### Access Control Lists (ACLs)
+
+# Configure IPv4 ACL
+ipv4 access-list PERMIT-SSH
+ 10 permit tcp 192.168.1.0 0.0.0.255 any eq ssh
+ 20 deny ipv4 any any log
+!
+commit
+
+# Configure extended IPv4 ACL
+ipv4 access-list FIREWALL-IN
+ 10 permit icmp any any
+ 20 permit tcp 192.168.1.0 0.0.0.255 any eq www
+ 30 permit tcp 192.168.1.0 0.0.0.255 any eq 443
+ 40 permit udp any any eq ntp
+ 50 deny ipv4 any any log
+!
+commit
+
+# Apply ACL to interface
+interface TenGigE0/0/0/10
+ ipv4 access-group FIREWALL-IN ingress
+!
+commit
+
+# Configure IPv6 ACL
+ipv6 access-list PERMIT-IPv6
+ 10 permit ipv6 2001:db8::/32 any
+ 20 permit icmpv6 any any
+ 30 deny ipv6 any any log
+!
+commit
+
+# Show ACL
+show access-lists ipv4 FIREWALL-IN
+show access-lists ipv6
+
+### Quality of Service (QoS)
+
+# Configure class-map
+class-map match-any VOICE
+ match dscp ef
+ match access-group ipv4 VOICE-ACL
+ end-class-map
+!
+
+class-map match-any VIDEO
+ match dscp af41
+ end-class-map
+!
+
+# Configure policy-map
+policy-map QOS-OUT
+ class VOICE
+  priority level 1
+  police rate percent 30
+  !
+ !
+ class VIDEO
+  bandwidth percent 40
+ !
+ class class-default
+  bandwidth percent 30
+ !
+ end-policy-map
+!
+commit
+
+# Apply QoS policy to interface
+interface TenGigE0/0/0/10
+ service-policy output QOS-OUT
+!
+commit
+
+# Show QoS statistics
+show policy-map interface TenGigE0/0/0/10 output
+
+### MPLS Configuration
+
+# Enable MPLS on interface
+interface TenGigE0/0/0/10
+ ipv4 address 192.168.1.1 255.255.255.0
+ no shutdown
+!
+
+mpls ldp
+ router-id 1.1.1.1
+ interface TenGigE0/0/0/10
+ !
+!
+commit
+
+# Configure MPLS TE (Traffic Engineering)
+mpls traffic-eng
+ interface TenGigE0/0/0/10
+  admin-weight 10
+ !
+!
+
+router isis CORE
+ address-family ipv4 unicast
+  mpls traffic-eng level-2-only
+  mpls traffic-eng router-id Loopback0
+ !
+ interface TenGigE0/0/0/10
+  address-family ipv4 unicast
+   metric 10
+  !
+ !
+!
+commit
+
+# Show MPLS information
+show mpls ldp neighbor
+show mpls forwarding
+show mpls traffic-eng tunnels
+
+### HSRP/VRRP Configuration
+
+# Configure HSRP (Hot Standby Router Protocol)
+router hsrp
+ interface BVI100
+  address-family ipv4
+   hsrp 1
+    priority 150
+    preempt delay minimum 60
+    address 10.100.0.1
+   !
+  !
+ !
+!
+commit
+
+# Configure VRRP (Virtual Router Redundancy Protocol)
+router vrrp
+ interface BVI100
+  address-family ipv4
+   vrrp 1
+    priority 150
+    preempt delay 60
+    address 10.100.0.1
+   !
+  !
+ !
+!
+commit
+
+# Show HSRP/VRRP status
+show hsrp
+show vrrp
+
+### Multicast Configuration
+
+# Enable PIM (Protocol Independent Multicast)
+multicast-routing
+ address-family ipv4
+  interface all enable
+ !
+!
+
+router pim
+ address-family ipv4
+  rp-address 10.1.1.1
+ !
+!
+
+interface TenGigE0/0/0/10
+ ipv4 address 192.168.1.1 255.255.255.0
+!
+commit
+
+# Show multicast information
+show pim neighbor
+show mrib route
+show igmp groups
+
+Verification and Troubleshooting Commands
+------------------------------------------
+
+### Layer 2 Verification
+
+# Show bridge domain information
+show l2vpn bridge-domain
+show l2vpn bridge-domain bd-name BD100 detail
+
+# Show MAC address table
+show l2vpn forwarding bridge-domain BD100 mac-address location 0/0/CPU0
+
+# Show bundle interfaces
+show bundle Bundle-Ether1
+show bundle Bundle-Ether1 detail
+
+# Show L2VPN status
+show l2vpn xconnect
+show l2vpn forwarding
+
+### Layer 3 Verification
+
+# Show interface status
+show ipv4 interface brief
+show ipv6 interface brief
+show interfaces TenGigE0/0/0/10
+
+# Show routing table
+show route
+show route ipv4 unicast
+show route ipv6 unicast
+show route vrf CUSTOMER-A
+
+# Show ARP table
+show arp
+show arp vrf CUSTOMER-A
+
+# Show IPv6 neighbors
+show ipv6 neighbors
+
+# Test connectivity
+ping 8.8.8.8
+ping 8.8.8.8 source 192.168.1.1 count 100
+traceroute 8.8.8.8
+
+# Show protocol neighbors
+show ospf neighbor
+show isis neighbor
+show bgp summary
+
+# Show CEF (Cisco Express Forwarding)
+show cef
+show cef 8.8.8.8
+
+### System Information
+
+# Show version
+show version
+admin show version
+
+# Show inventory
+show inventory
+admin show inventory
+
+# Show platform information
+show platform
+show platform vm
+
+# Show processes
+show processes cpu
+show processes memory
+
+# Show logging
+show logging
+show logging | include ERROR
+
+# Show configuration commits
+show configuration history
+show configuration commit list
+
+### Debugging (Use with Caution)
+
+# Enable debugging
+debug ospf events
+debug bgp updates
+debug mpls ldp messages
+
+# Disable debugging
+undebug all
+no debug all
+
+# Show debugging status
+show debug
+
+### Configuration Management
+
+# Show running configuration
+show running-config
+
+# Show configuration for specific section
+show running-config router ospf
+show running-config interface TenGigE0/0/0/10
+
+# Save configuration
+copy running-config disk:/config-backup.txt
+
+# Load configuration
+load configuration disk:/config-backup.txt
+
+# Configuration archive
+show configuration history
+show configuration history commit-id <id>
+
+# Compare configurations
+show configuration diff
+show configuration rollback changes last 1
+
+# Admin commands (for system-level operations)
+admin
+ show platform
+ show environment power
+exit
+
+Documentation References
+------------------------
+
+[1] Cisco Systems. (2024). Cisco IOS XR Command Reference.
+    https://www.cisco.com/c/en/us/support/ios-nx-os-software/ios-xr-software/products-command-reference-list.html
+    Official command reference for Cisco IOS-XR.
+
+[2] Cisco Systems. (2024). Cisco IOS XR Configuration Guide.
+    https://www.cisco.com/c/en/us/support/ios-nx-os-software/ios-xr-software/products-installation-and-configuration-guides-list.html
+    Comprehensive configuration guide for IOS-XR devices.
+
+[3] Cisco Systems. (2024). Cisco ASR 9000 Series Aggregation Services Router Configuration Guide.
+    https://www.cisco.com/c/en/us/support/routers/asr-9000-series-aggregation-services-routers/products-installation-and-configuration-guides-list.html
+    ASR 9000-specific configuration documentation.
+
+[4] Cisco Systems. (2024). Cisco NCS 5500 Series Configuration Guide.
+    https://www.cisco.com/c/en/us/support/routers/network-convergence-system-5500-series/products-installation-and-configuration-guides-list.html
+    NCS series configuration guide.
+
+[5] Cisco Systems. (2024). IOS XR L2VPN Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/iosxr/ncs5500/l2vpn/
+    Layer 2 VPN configuration including VPLS and VPWS.
+
+[6] Cisco Systems. (2024). IOS XR Routing Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/iosxr/ncs5500/routing/
+    Routing protocols configuration for IOS-XR.
+
+[7] Cisco Systems. (2024). IOS XR MPLS Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/iosxr/ncs5500/mpls/
+    MPLS, LDP, and traffic engineering configuration.
+
+[8] Cisco Systems. (2024). IOS XR System Management Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/iosxr/ncs5500/system-management/
+    System administration and management.
+
+[9] Cisco Systems. (2024). IOS XR QoS Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/iosxr/ncs5500/qos/
+    Quality of Service configuration.
+
+[10] Lebovitz, G., & Rossberg, R. (2016). Cisco IOS XR Fundamentals.
+     Cisco Press. ISBN: 978-1587144547
+     Comprehensive guide to IOS-XR architecture and configuration.
+
+[11] Cisco Systems. (2024). IOS XR Software Migration Guide.
+     https://www.cisco.com/c/en/us/products/collateral/ios-nx-os-software/ios-xr-software/guide-c07-734446.html
+     Migration guide from IOS to IOS-XR.
+
+[12] Cisco Learning Network.
+     https://learningnetwork.cisco.com/
+     Community resources and learning materials.
+
+Key Differences from IOS/IOS-XE
+--------------------------------
+
+1. Configuration Commit Model:
+   - IOS-XR requires explicit "commit" to apply changes
+   - Changes can be rolled back before commit
+   - Configuration sessions can be exclusive or private
+
+2. Administrative Plane:
+   - Separate admin mode for system-level operations
+   - Use "admin" command to enter administrative configuration
+
+3. Location-Based Architecture:
+   - Commands often require location specification (e.g., location 0/0/CPU0)
+   - Show commands display location-specific information
+
+4. Modular Configuration:
+   - Configuration is organized in a more hierarchical manner
+   - End statements mark the end of configuration blocks
+
+5. Process Restart:
+   - Individual processes can be restarted without full device reload
+   - Use "process restart <process-name>" for troubleshooting
+
+6. Interface Naming:
+   - Format: Type Rack/Slot/Instance/Port (e.g., TenGigE 0/0/0/1)
+   - More detailed naming convention than IOS
+
+Notes
+-----
+
+- IOS-XR is designed for carrier-class and service provider networks
+- Always commit configuration changes: commit
+- Use "show configuration failed" to see why a commit failed
+- Configuration changes are atomic - all or nothing
+- Use "commit best-effort" to commit valid parts if some fail
+- Private configuration sessions allow multiple users to configure simultaneously
+- Use Tab for command completion and ? for context-sensitive help

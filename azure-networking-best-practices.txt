@@ -1,0 +1,1933 @@
+Azure Networking Best Practices
+================================
+
+This document provides comprehensive best practices for designing, implementing, and managing Azure networking infrastructure, covering architecture patterns, connectivity, performance optimization, cost management, and operational excellence.
+
+Introduction
+------------
+
+Effective Azure networking requires careful planning and design to ensure scalability, performance, security, and cost-efficiency. This guide focuses on the architectural and operational aspects of Azure networking, complementing security-specific guidance with practical recommendations for building robust network infrastructure.
+
+Network Architecture Patterns
+------------------------------
+
+### 1. Hub-and-Spoke Topology
+
+**Overview:**
+
+The hub-and-spoke model is the most common Azure network architecture for enterprise deployments.
+
+Components:
+```
+Hub VNet:
+- Shared services (Azure Firewall, VPN Gateway, DNS)
+- Management and monitoring
+- Connectivity to on-premises
+
+Spoke VNets:
+- Application workloads (isolated)
+- Development/test environments
+- Business units or teams
+- Connected to hub via VNet peering
+```
+
+**Design Considerations:**
+
+Hub VNet Sizing:
+- Address space: /20 to /16 (reserve space for growth)
+- Firewall subnet: /24 minimum (allows 251 usable IPs)
+- Gateway subnet: /27 minimum, /26 recommended
+- Bastion subnet: /26 minimum
+- Management subnet: /24
+- DNS servers (if custom): /26
+
+Spoke VNet Sizing:
+- Small workloads: /24 (251 hosts)
+- Medium workloads: /20 (4,091 hosts)
+- Large workloads: /16 (65,531 hosts)
+- Kubernetes/AKS: /16 or larger (pods need many IPs)
+
+Example Hub-and-Spoke Design:
+```
+Region: East US
+
+Hub VNet: 10.0.0.0/20 (4,096 addresses)
+├── GatewaySubnet: 10.0.0.0/26 (59 usable IPs)
+├── AzureFirewallSubnet: 10.0.1.0/24 (251 usable IPs)
+├── AzureBastionSubnet: 10.0.2.0/26 (59 usable IPs)
+├── ManagementSubnet: 10.0.3.0/24 (251 usable IPs)
+└── DNSSubnet: 10.0.4.0/26 (59 usable IPs)
+
+Production Spoke: 10.1.0.0/16 (65,536 addresses)
+├── WebTier: 10.1.1.0/24
+├── AppTier: 10.1.2.0/24
+├── DataTier: 10.1.3.0/24
+├── AKS: 10.1.32.0/19 (8,192 addresses for pods/nodes)
+└── PrivateEndpoints: 10.1.254.0/24
+
+Development Spoke: 10.2.0.0/16
+├── DevWeb: 10.2.1.0/24
+├── DevApp: 10.2.2.0/24
+└── DevData: 10.2.3.0/24
+
+DR Region (West US):
+Hub VNet: 10.10.0.0/20
+Production Spoke: 10.11.0.0/16
+```
+
+**Implementation Best Practices:**
+
+VNet Peering Configuration:
+```bash
+# Peer hub to spoke with gateway transit
+az network vnet peering create \
+  --name Hub-to-ProdSpoke \
+  --vnet-name Hub-VNet \
+  --remote-vnet Prod-Spoke-VNet \
+  --allow-vnet-access \
+  --allow-forwarded-traffic \
+  --allow-gateway-transit
+
+# Peer spoke to hub using remote gateways
+az network vnet peering create \
+  --name ProdSpoke-to-Hub \
+  --vnet-name Prod-Spoke-VNet \
+  --remote-vnet Hub-VNet \
+  --allow-vnet-access \
+  --allow-forwarded-traffic \
+  --use-remote-gateways
+```
+
+Peering Best Practices:
+- Enable "Allow Forwarded Traffic" on all peerings (for firewall routing)
+- Enable "Allow Gateway Transit" on hub (share VPN/ExpressRoute)
+- Enable "Use Remote Gateways" on spokes (use hub's gateway)
+- Name peerings descriptively (Hub-to-Prod-Spoke, Prod-Spoke-to-Hub)
+- Document all peering relationships
+- Monitor peering status with alerts
+
+**Hub-and-Spoke Limitations:**
+
+Peering Constraints:
+- Maximum 500 peerings per VNet (can request increase to 1000)
+- No transitive routing (spoke-to-spoke must go through hub)
+- Peering cannot span between Azure AD tenants (use VPN instead)
+- No overlapping address spaces allowed
+
+Workarounds:
+- Use User-Defined Routes (UDRs) to force spoke-to-spoke via firewall
+- Implement Azure Virtual WAN for large-scale deployments
+- Use multiple hub VNets for very large environments (>500 spokes)
+
+### 2. Azure Virtual WAN Topology
+
+**When to Use Virtual WAN:**
+
+Criteria:
+- 50+ branch offices requiring connectivity
+- Multiple Azure regions with inter-region connectivity
+- SD-WAN integration needed
+- Simplified management preferred over granular control
+- Any-to-any connectivity required (branches, VNets, users)
+
+Virtual WAN Components:
+```
+Virtual WAN Resource (Global):
+└── Virtual Hubs (Regional - East US, West US, etc.)
+    ├── VPN Gateway (branch connectivity)
+    ├── ExpressRoute Gateway (private connectivity)
+    ├── Point-to-Site VPN (remote users)
+    ├── Azure Firewall (optional)
+    └── Route Tables
+```
+
+Virtual WAN vs. Traditional Hub-and-Spoke:
+```
+Traditional Hub-and-Spoke:
+✓ More control over routing
+✓ Lower cost for small deployments
+✓ Granular network policies
+✗ Manual UDR management
+✗ Complex routing for spoke-to-spoke
+✗ Difficult to scale beyond one region
+
+Virtual WAN:
+✓ Automatic routing (transitive by default)
+✓ Simplified management
+✓ Built for global scale
+✓ Any-to-any connectivity
+✗ Higher cost
+✗ Less granular control
+✗ Learning curve for traditional network engineers
+```
+
+**Virtual WAN Design:**
+
+Multi-Region Virtual WAN:
+```
+Virtual WAN (Global)
+
+├── Virtual Hub - East US (10.1.0.0/24)
+│   ├── VPN Gateway: Branch connectivity (50 sites)
+│   ├── ER Gateway: On-premises datacenter
+│   ├── Connected VNets: Prod-EastUS (10.10.0.0/16), Dev-EastUS (10.20.0.0/16)
+│   └── Azure Firewall: Inspection and filtering
+│
+├── Virtual Hub - West US (10.2.0.0/24)
+│   ├── VPN Gateway: Branch connectivity (30 sites)
+│   ├── Connected VNets: Prod-WestUS (10.11.0.0/16)
+│   └── Azure Firewall: Inspection and filtering
+│
+└── Virtual Hub - West Europe (10.3.0.0/24)
+    ├── ER Gateway: European datacenter
+    └── Connected VNets: Prod-WestEU (10.12.0.0/16)
+
+Automatic routing between all connected resources
+```
+
+Create Virtual WAN:
+```bash
+# Create Virtual WAN
+az network vwan create \
+  --name Corporate-VWAN \
+  --resource-group Network-RG \
+  --type Standard
+
+# Create Virtual Hub in East US
+az network vhub create \
+  --name Hub-EastUS \
+  --resource-group Network-RG \
+  --vwan Corporate-VWAN \
+  --address-prefix 10.1.0.0/24 \
+  --location eastus
+
+# Connect VNet to Virtual Hub
+az network vhub connection create \
+  --name Prod-VNet-Connection \
+  --resource-group Network-RG \
+  --vhub-name Hub-EastUS \
+  --remote-vnet Prod-VNet
+```
+
+Virtual WAN Best Practices:
+- Use Standard SKU (not Basic) for production
+- Deploy virtual hubs in primary regions only
+- Size hub address space appropriately (/23 to /24)
+- Enable Azure Firewall in hubs for security
+- Use routing intent for traffic inspection
+- Monitor hub capacity and scale proactively
+- Document routing policies clearly
+
+### 3. Multi-Region Architectures
+
+**Design Patterns:**
+
+Active-Active (Dual Region):
+```
+Load balancing across regions for:
+- High availability
+- Geographic distribution
+- Load distribution
+- Disaster recovery
+
+Components:
+- Azure Traffic Manager or Azure Front Door (global LB)
+- Identical deployments in each region
+- Database replication (read replicas, geo-replication)
+- Shared storage with geo-redundancy
+```
+
+Active-Passive (DR Region):
+```
+Primary region serves traffic, secondary for DR:
+- Cost optimization
+- RTO/RPO requirements
+- Compliance and data residency
+- Simplified operations
+
+Components:
+- Azure Site Recovery for VM replication
+- Database geo-replication
+- Backup to secondary region
+- Failover procedures and testing
+```
+
+**Multi-Region Connectivity:**
+
+Global VNet Peering:
+```bash
+# Peer VNets across regions
+az network vnet peering create \
+  --name EastUS-to-WestUS \
+  --vnet-name Prod-VNet-EastUS \
+  --remote-vnet /subscriptions/{sub}/resourceGroups/Network-RG-WestUS/providers/Microsoft.Network/virtualNetworks/Prod-VNet-WestUS \
+  --allow-vnet-access \
+  --allow-forwarded-traffic
+```
+
+Global Peering Considerations:
+- Bandwidth charged for cross-region traffic ($0.02/GB typically)
+- Higher latency than intra-region (based on geographic distance)
+- Same configuration as regional peering
+- Useful for multi-region app tiers
+- Alternative to VPN for cross-region connectivity
+
+Virtual WAN for Multi-Region:
+- Automatic hub-to-hub connectivity
+- Optimized routing between regions
+- Centralized management
+- Higher cost but simpler operations
+
+IP Address Planning
+-------------------
+
+### 1. Address Space Design
+
+**RFC 1918 Private Address Ranges:**
+
+Available Ranges:
+```
+Class A: 10.0.0.0/8
+- Total addresses: 16,777,216
+- Use for: Large enterprises, multiple regions
+- Example allocation: 10.0.0.0/12 per region
+
+Class B: 172.16.0.0/12
+- Total addresses: 1,048,576
+- Use for: Medium enterprises
+- Example allocation: 172.16.0.0/16 per major environment
+
+Class C: 192.168.0.0/16
+- Total addresses: 65,536
+- Use for: Small deployments, lab environments
+- Example allocation: 192.168.1.0/24 per VNet
+```
+
+**Enterprise IP Allocation Strategy:**
+
+Regional Allocation:
+```
+Global IP Plan: 10.0.0.0/8
+
+East US Region: 10.0.0.0/12 (1,048,576 addresses)
+├── Hub VNet: 10.0.0.0/20
+├── Production: 10.1.0.0/16
+├── Development: 10.2.0.0/16
+├── Testing: 10.3.0.0/16
+└── Reserved: 10.4.0.0/14 (for growth)
+
+West US Region: 10.16.0.0/12
+├── Hub VNet: 10.16.0.0/20
+├── Production: 10.17.0.0/16
+├── Development: 10.18.0.0/16
+└── Reserved: 10.19.0.0/14
+
+West Europe: 10.32.0.0/12
+East Asia: 10.48.0.0/12
+
+Reserved for future regions: 10.64.0.0/10
+```
+
+**IP Planning Best Practices:**
+
+Planning Guidelines:
+- Plan globally before implementing anything
+- Avoid overlapping address spaces (critical for peering/VPN)
+- Reserve large blocks for future growth (50-75% unused initially)
+- Use consistent patterns across regions
+- Document IP allocation in central repository
+- Consider mergers/acquisitions (reserve space)
+- Align with on-premises IP scheme (avoid conflicts)
+- Use larger subnets (/24) rather than many small ones
+
+Subnet Sizing Formula:
+```
+Usable IPs = (2^(32 - prefix)) - 5
+
+Examples:
+/29 = 8 total - 5 reserved = 3 usable (too small, avoid)
+/28 = 16 total - 5 reserved = 11 usable (small, limited use)
+/27 = 32 total - 5 reserved = 27 usable (minimum for most subnets)
+/26 = 64 total - 5 reserved = 59 usable (recommended minimum)
+/25 = 128 total - 5 reserved = 123 usable
+/24 = 256 total - 5 reserved = 251 usable (recommended default)
+/23 = 512 total - 5 reserved = 507 usable
+/22 = 1,024 total - 5 reserved = 1,019 usable
+/20 = 4,096 total - 5 reserved = 4,091 usable
+/16 = 65,536 total - 5 reserved = 65,531 usable (large workloads, AKS)
+```
+
+Azure Reserved Addresses (per subnet):
+- x.x.x.0: Network address
+- x.x.x.1: Default gateway (Azure router)
+- x.x.x.2: Azure DNS mapping
+- x.x.x.3: Azure DNS mapping
+- x.x.x.255: Network broadcast (reserved but not used)
+
+### 2. CIDR Notation Quick Reference
+
+Common Subnet Sizes:
+```
+CIDR    Subnet Mask        Total IPs   Usable IPs   Use Case
+/32     255.255.255.255    1           N/A          Single host route
+/31     255.255.255.254    2           2            Point-to-point (rare in Azure)
+/30     255.255.255.252    4           N/A          Don't use in Azure
+/29     255.255.255.248    8           3            Don't use in Azure
+/28     255.255.255.240    16          11           Very small subnets only
+/27     255.255.255.224    32          27           Small subnets
+/26     255.255.255.192    64          59           Bastion, small workloads
+/25     255.255.255.128    128         123          Medium subnets
+/24     255.255.255.0      256         251          Standard subnet size
+/23     255.255.254.0      512         507          Large subnets
+/22     255.255.252.0      1,024       1,019        Very large subnets
+/21     255.255.248.0      2,048       2,043        Very large subnets
+/20     255.255.240.0      4,096       4,091        VNet or very large subnet
+/19     255.255.224.0      8,192       8,187        Large VNet or AKS
+/18     255.255.192.0      16,384      16,379       Large VNet
+/17     255.255.128.0      32,768      32,763       Very large VNet
+/16     255.255.0.0        65,536      65,531       Standard VNet size
+```
+
+### 3. Special Subnet Requirements
+
+**Azure Service Subnets:**
+
+Dedicated Subnet Names (cannot be changed):
+```
+GatewaySubnet:
+- Name: Must be exactly "GatewaySubnet"
+- Size: /27 minimum, /26 recommended, /24 for high throughput
+- Purpose: VPN Gateway and ExpressRoute Gateway
+- No NSG allowed
+- No resources except gateways
+
+AzureFirewallSubnet:
+- Name: Must be exactly "AzureFirewallSubnet"
+- Size: /26 minimum, /24 recommended
+- Purpose: Azure Firewall
+- No NSG allowed
+- No UDR with 0.0.0.0/0 (breaks firewall)
+
+AzureBastionSubnet:
+- Name: Must be exactly "AzureBastionSubnet"
+- Size: /26 minimum
+- Purpose: Azure Bastion
+- NSG required (specific rules)
+- No UDR recommended
+
+AzureFirewallManagementSubnet:
+- Name: Must be exactly "AzureFirewallManagementSubnet"
+- Size: /26 minimum
+- Purpose: Azure Firewall management (forced tunneling scenarios)
+- Required only if forcing tunnel to on-premises
+```
+
+**AKS Subnet Sizing:**
+
+AKS IP Requirements:
+```
+IP addresses needed:
+- Each node: 1 IP
+- Each pod: 1 IP (Azure CNI) or shared node IP (kubenet)
+- Load balancers: Public IPs
+- Cluster services: Internal IPs
+
+Example AKS Cluster (Azure CNI):
+- 10 nodes
+- Max 30 pods per node
+- Total IPs needed: 10 + (10 × 30) = 310 IPs
+- Recommended subnet: /23 (507 usable IPs) for growth
+- Large clusters: /19 or /20
+```
+
+AKS Subnet Best Practices:
+- Use Azure CNI for better network performance
+- Size subnet 2-3× expected max pods
+- Separate subnet for AKS (don't mix with VMs)
+- Plan for cluster expansion
+- Consider multiple node pools (can use same subnet)
+- /19 subnet for large production clusters (8,187 IPs)
+
+VNet Peering and Connectivity
+------------------------------
+
+### 1. VNet Peering Design
+
+**Peering Types:**
+
+Regional Peering:
+- VNets in same Azure region
+- Low latency (sub-millisecond)
+- No bandwidth limits
+- No charges for data transfer
+- 99.9% SLA
+
+Global Peering:
+- VNets in different Azure regions
+- Latency based on geographic distance
+- No bandwidth limits
+- Data transfer charges ($0.01-$0.02 per GB)
+- 99.9% SLA
+- Same configuration as regional peering
+
+**Peering Configuration Options:**
+
+Allow Virtual Network Access:
+- Default: Enabled
+- Allows communication between peered VNets
+- Required for basic connectivity
+
+Allow Forwarded Traffic:
+- Default: Disabled
+- Enable when using hub firewall or NVA
+- Allows traffic from one VNet to flow through to another
+- Required for hub-and-spoke with central firewall
+
+Allow Gateway Transit:
+- Default: Disabled
+- Enable on hub VNet
+- Allows spoke VNets to use hub's VPN/ExpressRoute gateway
+- Reduces cost (single gateway serves multiple VNets)
+- Requires spoke to enable "Use Remote Gateways"
+
+Use Remote Gateways:
+- Default: Disabled
+- Enable on spoke VNets
+- Uses hub's gateway for on-premises connectivity
+- Mutually exclusive with spoke having its own gateway
+- Must enable "Allow Gateway Transit" on hub
+
+**Peering Best Practices:**
+
+Design:
+- Document all peering relationships in network diagram
+- Use consistent naming: {Source}-to-{Destination}
+- Create peerings in both directions
+- Test connectivity after creating peering
+- Monitor peering status (Connected vs. Disconnected)
+- Plan for peering limits (500 per VNet default)
+
+Troubleshooting:
+- Check both peering directions (must be "Connected")
+- Verify no overlapping address spaces
+- Confirm NSG rules allow traffic
+- Check UDRs don't interfere with routing
+- Verify subscription limits not exceeded
+
+Cost Optimization:
+- Regional peering has no data transfer charges
+- Global peering: $0.01-$0.02 per GB (varies by region)
+- Use regional peering when possible
+- Consider data transfer costs in multi-region designs
+- Monitor data transfer with Cost Management
+
+### 2. VPN Gateway Connectivity
+
+**VPN Gateway SKUs:**
+
+SKU Comparison:
+```
+Basic (Legacy - NOT RECOMMENDED):
+- Throughput: 100 Mbps
+- Tunnels: 10 max
+- Features: Basic S2S, no BGP, no P2S
+- Cost: $26/month
+- Use: Never use for production
+
+VpnGw1:
+- Throughput: 650 Mbps
+- Tunnels: 30 max (S2S/VNet-to-VNet)
+- P2S: 250 max concurrent
+- Features: BGP, active-active, custom IPsec
+- Cost: ~$140/month
+
+VpnGw2:
+- Throughput: 1 Gbps
+- Tunnels: 30 max
+- P2S: 500 max concurrent
+- Cost: ~$360/month
+- Recommended for production
+
+VpnGw3:
+- Throughput: 1.25 Gbps
+- Tunnels: 30 max
+- P2S: 1,000 max concurrent
+- Cost: ~$750/month
+
+VpnGw4:
+- Throughput: 5 Gbps
+- Tunnels: 100 max
+- P2S: 5,000 max concurrent
+- Cost: ~$1,490/month
+
+VpnGw5:
+- Throughput: 10 Gbps
+- Tunnels: 100 max
+- P2S: 10,000 max concurrent
+- Cost: ~$2,270/month
+
+AZ SKUs (Zone-redundant):
+- VpnGw1AZ, VpnGw2AZ, VpnGw3AZ, VpnGw4AZ, VpnGw5AZ
+- Deployed across Availability Zones
+- Higher SLA (99.99% vs 99.9%)
+- ~20% higher cost
+- Recommended for production
+```
+
+**VPN Gateway Design:**
+
+Active-Active Configuration:
+```bash
+# Create VPN gateway with active-active
+az network vnet-gateway create \
+  --name Hub-VPN-GW \
+  --resource-group Hub-RG \
+  --vnet Hub-VNet \
+  --public-ip-addresses VPN-PIP1 VPN-PIP2 \
+  --gateway-type Vpn \
+  --vpn-type RouteBased \
+  --sku VpnGw2AZ \
+  --active-active \
+  --location eastus \
+  --no-wait
+```
+
+Active-Active Benefits:
+- Two active tunnels (higher throughput)
+- Automatic failover (no downtime during maintenance)
+- Load balancing across tunnels
+- Better availability (99.99% with AZ SKU)
+- Recommended for all production deployments
+
+**BGP Configuration:**
+
+Enable BGP for Dynamic Routing:
+```bash
+# Configure BGP on VPN gateway
+az network vnet-gateway update \
+  --name Hub-VPN-GW \
+  --resource-group Hub-RG \
+  --asn 65000 \
+  --bgp-peering-address 10.0.0.4
+
+# Configure BGP on local network gateway
+az network local-gateway create \
+  --name OnPrem-LNG \
+  --resource-group Hub-RG \
+  --gateway-ip-address 203.0.113.1 \
+  --bgp-peering-address 192.168.255.1 \
+  --asn 65001
+```
+
+BGP Benefits:
+- Automatic route propagation
+- Faster convergence during failures
+- Support for multiple sites
+- Dynamic route updates (no manual intervention)
+- Required for ExpressRoute coexistence
+- Scalable for complex topologies
+
+BGP Best Practices:
+- Use private ASNs (64512-65534 for 16-bit)
+- Document ASN allocation
+- Configure route filters
+- Implement BGP timers appropriately
+- Monitor BGP peer status
+- Test failover scenarios
+
+### 3. ExpressRoute Connectivity
+
+**ExpressRoute Overview:**
+
+Benefits:
+- Private connectivity (not over Internet)
+- Predictable performance
+- Lower latency than VPN
+- Higher bandwidth (50 Mbps to 100 Gbps)
+- Required for some compliance scenarios
+- SLA: 99.95% (99.99% with dual circuits)
+
+Connection Models:
+```
+1. CloudExchange Co-location:
+   - Datacenter in same facility as cloud provider
+   - Cross-connect to provider's equipment
+   - Lowest latency
+
+2. Point-to-Point Ethernet:
+   - Dedicated Ethernet link from datacenter
+   - Provider delivers circuit to datacenter
+   - Fixed bandwidth
+
+3. Any-to-Any (IPVPN):
+   - Integration with existing MPLS network
+   - Multiple sites connect via provider's network
+   - Simplified multi-site connectivity
+
+4. ExpressRoute Direct:
+   - Direct connection to Microsoft (100 Gbps)
+   - Port pairs in peering location
+   - Multiple circuits from single port pair
+   - MACsec encryption support
+```
+
+**ExpressRoute SKUs:**
+
+Bandwidth Options:
+```
+Local SKU:
+- Bandwidth: Unlimited data in local region
+- Use: Access resources in same region as peering location
+- Cost: Fixed monthly fee (~$55/month)
+- Best for: Single region deployments
+
+Standard SKU:
+- Bandwidth: 50 Mbps to 10 Gbps
+- Use: Access resources in same geopolitical region
+- Cost: Based on bandwidth + data transfer
+- Best for: Regional connectivity
+
+Premium SKU:
+- Bandwidth: 50 Mbps to 10 Gbps
+- Use: Global connectivity to all Azure regions
+- Cost: Higher than Standard
+- Features: Increased route limits (10,000 vs 4,000)
+- Best for: Multi-region global deployments
+```
+
+**ExpressRoute Design Patterns:**
+
+Single Circuit:
+```
+On-Premises Datacenter
+    |
+    | ExpressRoute Circuit
+    |
+Azure Region (East US)
+- Hub VNet with ER Gateway
+- Spoke VNets via peering
+```
+
+Dual Circuits (High Availability):
+```
+On-Premises Datacenter
+    |
+    |-- Primary ExpressRoute Circuit --> East US Hub
+    |
+    |-- Secondary ExpressRoute Circuit --> West US Hub
+
+Benefits:
+- Redundancy across circuits
+- Redundancy across regions
+- Failover in seconds
+- 99.99% SLA
+```
+
+ExpressRoute Best Practices:
+- Always deploy dual circuits for production
+- Use different peering locations for redundancy
+- Configure BFD (Bidirectional Forwarding Detection) for fast failover
+- Enable ExpressRoute monitoring and alerts
+- Document circuit details (provider, location, bandwidth)
+- Test failover procedures quarterly
+- Monitor bandwidth utilization
+- Plan for circuit capacity (80% utilization threshold)
+
+**ExpressRoute and VPN Coexistence:**
+
+Scenario: Use both ExpressRoute and VPN
+```
+Primary: ExpressRoute (production traffic)
+Backup: VPN over Internet (failover)
+
+Configuration:
+- Both gateways in same GatewaySubnet
+- BGP routing prefers ExpressRoute (lower AS path)
+- VPN automatically takes over if ER fails
+- Provides redundancy across connectivity types
+```
+
+Create Coexistent Gateways:
+```bash
+# Create ExpressRoute gateway
+az network vnet-gateway create \
+  --name Hub-ER-GW \
+  --resource-group Hub-RG \
+  --vnet Hub-VNet \
+  --gateway-type ExpressRoute \
+  --sku Standard
+
+# Create VPN gateway (same subnet)
+az network vnet-gateway create \
+  --name Hub-VPN-GW \
+  --resource-group Hub-RG \
+  --vnet Hub-VNet \
+  --gateway-type Vpn \
+  --vpn-type RouteBased \
+  --sku VpnGw2
+```
+
+DNS Configuration
+-----------------
+
+### 1. Azure DNS Options
+
+**DNS Choices:**
+
+Azure-Provided DNS (Default):
+- IP: 168.63.129.16 (automatic)
+- Features: Basic name resolution within VNet
+- Limitations: Cannot resolve custom domains, no conditional forwarding
+- Cost: Free
+- Use: Simple scenarios, non-production
+
+Azure DNS Private Zones:
+- Host private DNS zones in Azure
+- Automatic VM registration
+- Integration with VNets
+- DNSSEC not supported
+- Cost: $0.50 per zone/month + queries
+- Use: Production workloads, private name resolution
+
+Azure DNS Public Zones:
+- Host public DNS zones
+- Anycast network (fast, globally distributed)
+- 100% SLA
+- Cost: $0.50 per zone/month + queries
+- Use: Public-facing domains
+
+Custom DNS Servers:
+- Deploy your own DNS servers (Windows, BIND, etc.)
+- Full control over DNS configuration
+- Conditional forwarding, DNSSEC support
+- Requires management and maintenance
+- Use: Complex scenarios, integration with on-premises
+
+**Azure DNS Private Zones Implementation:**
+
+Create Private DNS Zone:
+```bash
+# Create private DNS zone
+az network private-dns zone create \
+  --name contoso.internal \
+  --resource-group DNS-RG
+
+# Link VNet to private zone (with auto-registration)
+az network private-dns link vnet create \
+  --name Hub-Link \
+  --resource-group DNS-RG \
+  --zone-name contoso.internal \
+  --virtual-network Hub-VNet \
+  --registration-enabled true
+
+# Link spoke VNet (no auto-registration)
+az network private-dns link vnet create \
+  --name Prod-Link \
+  --resource-group DNS-RG \
+  --zone-name contoso.internal \
+  --virtual-network Prod-VNet \
+  --registration-enabled false
+
+# Create manual DNS record
+az network private-dns record-set a add-record \
+  --resource-group DNS-RG \
+  --zone-name contoso.internal \
+  --record-set-name appserver01 \
+  --ipv4-address 10.1.2.10
+```
+
+Auto-Registration:
+- Enabled: VMs automatically registered when created
+- Disabled: Manual record management
+- Only enable on one VNet (usually hub or management VNet)
+- Prevents duplicate records
+
+### 2. DNS Architecture Patterns
+
+**Hub-Spoke DNS Design:**
+
+Option 1: Azure DNS Private Zones
+```
+Azure DNS Private Zone: contoso.internal
+├── Linked to Hub VNet (auto-registration enabled)
+├── Linked to Prod Spoke (no auto-registration)
+└── Linked to Dev Spoke (no auto-registration)
+
+All VMs use Azure DNS (168.63.129.16)
+Resolution works across all linked VNets
+```
+
+Option 2: Custom DNS Servers in Hub
+```
+Hub VNet:
+├── DNS Server 01: 10.0.4.4
+└── DNS Server 02: 10.0.4.5
+
+Spoke VNets configured to use hub DNS servers
+
+DNS Server Configuration:
+- Forward Azure DNS queries to 168.63.129.16
+- Forward on-premises queries to on-prem DNS
+- Conditional forwarders for specific zones
+```
+
+Configure Custom DNS on VNet:
+```bash
+# Set custom DNS servers on VNet
+az network vnet update \
+  --name Prod-VNet \
+  --resource-group Prod-RG \
+  --dns-servers 10.0.4.4 10.0.4.5
+
+# Reboot VMs to pick up new DNS settings
+az vm restart --ids $(az vm list --resource-group Prod-RG --query "[].id" -o tsv)
+```
+
+**Hybrid DNS Design:**
+
+DNS Resolution Flow:
+```
+Azure VM Query:
+1. VM queries Azure DNS (168.63.129.16) or custom DNS
+2. If custom DNS: Forward to appropriate zone
+   - Azure resources: Forward to 168.63.129.16
+   - On-premises resources: Forward to on-prem DNS
+   - Public Internet: Forward to public DNS (8.8.8.8)
+3. Response returned to VM
+
+On-Premises Query:
+1. On-prem server queries local DNS
+2. Azure zone queries forwarded to Azure DNS servers (over VPN/ER)
+3. Response returned via VPN/ER
+```
+
+DNS Server Configuration (Windows DNS):
+```powershell
+# Forward Azure zone to Azure DNS
+Add-DnsServerConditionalForwarderZone `
+  -Name "contoso.azure.internal" `
+  -MasterServers 168.63.129.16
+
+# Forward Azure private endpoint zones
+Add-DnsServerConditionalForwarderZone `
+  -Name "privatelink.blob.core.windows.net" `
+  -MasterServers 168.63.129.16
+```
+
+### 3. DNS Best Practices
+
+Configuration:
+- Use Azure DNS Private Zones for production workloads
+- Deploy redundant DNS servers (minimum 2) if using custom DNS
+- Configure DNS at VNet level (not VM level)
+- Document all DNS zones and forwarders
+- Use descriptive zone names
+- Implement split-brain DNS if needed (different internal/external views)
+
+Performance:
+- Place DNS servers geographically close to clients
+- Use DNS caching to reduce query load
+- Monitor DNS query performance
+- Set appropriate TTL values (300-3600 seconds typical)
+
+Security:
+- Restrict DNS server access with NSGs
+- Don't expose DNS servers publicly
+- Use DNS over HTTPS (DoH) for client queries if supported
+- Monitor for DNS tunneling and exfiltration
+- Log all DNS queries for security analysis
+
+Private Endpoints and DNS:
+- Private endpoints automatically create DNS records
+- Requires private DNS zones for each service type
+- Link private DNS zones to all VNets that need access
+- Example zones:
+  * privatelink.blob.core.windows.net (Storage blob)
+  * privatelink.database.windows.net (SQL Database)
+  * privatelink.vaultcore.azure.net (Key Vault)
+
+Load Balancing
+--------------
+
+### 1. Azure Load Balancing Options
+
+**Load Balancer Decision Tree:**
+
+Global vs. Regional:
+```
+Global (Multi-Region):
+- Azure Front Door: HTTP/HTTPS, WAF, caching, SSL offload
+- Traffic Manager: DNS-based, any protocol, health checks
+
+Regional (Single Region):
+- Azure Application Gateway: HTTP/HTTPS, WAF, Layer 7 routing
+- Azure Load Balancer: Layer 4, TCP/UDP, high performance
+```
+
+HTTP/HTTPS vs. Non-HTTP:
+```
+HTTP/HTTPS Traffic:
+- Use: Front Door (global) or Application Gateway (regional)
+- Features: SSL termination, URL routing, WAF
+
+Non-HTTP Traffic (TCP/UDP):
+- Use: Traffic Manager (global) or Load Balancer (regional)
+- Features: High performance, low latency
+```
+
+**Azure Load Balancer:**
+
+SKUs:
+```
+Basic (Free - NOT RECOMMENDED):
+- Legacy, limited features
+- No SLA, no Availability Zones
+- Backend pool: 300 instances max
+- Do not use for production
+
+Standard (Recommended):
+- 99.99% SLA
+- Availability Zone support
+- Backend pool: 1,000 instances
+- Metrics and diagnostics
+- Multiple frontend IPs
+- HA Ports
+- Outbound rules
+- Cost: ~$18/month + data processed
+```
+
+Create Standard Load Balancer:
+```bash
+# Create public IP
+az network public-ip create \
+  --name LB-PIP \
+  --resource-group Prod-RG \
+  --sku Standard \
+  --allocation-method Static
+
+# Create load balancer
+az network lb create \
+  --name Prod-LB \
+  --resource-group Prod-RG \
+  --sku Standard \
+  --public-ip-address LB-PIP \
+  --frontend-ip-name FrontEnd \
+  --backend-pool-name BackEndPool
+
+# Create health probe
+az network lb probe create \
+  --lb-name Prod-LB \
+  --resource-group Prod-RG \
+  --name HealthProbe \
+  --protocol Tcp \
+  --port 80 \
+  --interval 15 \
+  --threshold 2
+
+# Create load balancing rule
+az network lb rule create \
+  --lb-name Prod-LB \
+  --resource-group Prod-RG \
+  --name HTTP-Rule \
+  --protocol Tcp \
+  --frontend-port 80 \
+  --backend-port 80 \
+  --frontend-ip-name FrontEnd \
+  --backend-pool-name BackEndPool \
+  --probe-name HealthProbe
+```
+
+Load Balancer Best Practices:
+- Use Standard SKU for all production workloads
+- Enable zone redundancy (deploy across zones)
+- Configure appropriate health probes
+- Use TCP probes for simple health checks
+- Use HTTP probes for application-level health
+- Set probe interval to 15 seconds (default)
+- Set unhealthy threshold to 2 (fails after 2 consecutive failures)
+- Configure session persistence if needed (client IP, client IP+protocol)
+- Monitor backend pool health
+- Use outbound rules for explicit SNAT configuration
+
+**Internal Load Balancer:**
+
+Use Cases:
+- Load balance between application tiers
+- Load balance database connections
+- Internal API endpoints
+- Backend services not exposed to Internet
+
+Create Internal Load Balancer:
+```bash
+# Create internal load balancer
+az network lb create \
+  --name Internal-LB \
+  --resource-group Prod-RG \
+  --sku Standard \
+  --vnet-name Prod-VNet \
+  --subnet App-Subnet \
+  --frontend-ip-name FrontEnd \
+  --backend-pool-name BackEndPool \
+  --private-ip-address 10.1.2.100
+
+# Configure for zone redundancy
+az network lb frontend-ip create \
+  --lb-name Internal-LB \
+  --resource-group Prod-RG \
+  --name FrontEnd-Zone-Redundant \
+  --vnet-name Prod-VNet \
+  --subnet App-Subnet \
+  --zone 1 2 3
+```
+
+### 2. Application Gateway
+
+**Application Gateway Overview:**
+
+Features:
+- Layer 7 load balancing
+- URL-based routing
+- SSL/TLS termination
+- End-to-end SSL encryption
+- Web Application Firewall (WAF)
+- Session affinity
+- WebSocket support
+- HTTP/2 support
+- Autoscaling (v2 SKU)
+
+SKUs:
+```
+Standard_v2 (Recommended):
+- Autoscaling
+- Zone redundancy
+- Static VIP
+- WAF not included
+- Pricing: Fixed + Capacity Units (CU)
+
+WAF_v2:
+- All Standard_v2 features
+- WAF with OWASP rules
+- Bot protection
+- Custom rules
+- Pricing: Higher fixed cost + CU
+
+V1 SKUs (Legacy - NOT RECOMMENDED):
+- Standard, WAF (v1)
+- No autoscaling
+- Manual scaling only
+- Being retired
+```
+
+Create Application Gateway:
+```bash
+# Create public IP
+az network public-ip create \
+  --name AppGW-PIP \
+  --resource-group Prod-RG \
+  --sku Standard \
+  --allocation-method Static
+
+# Create Application Gateway
+az network application-gateway create \
+  --name Prod-AppGW \
+  --resource-group Prod-RG \
+  --location eastus \
+  --vnet-name Prod-VNet \
+  --subnet AppGW-Subnet \
+  --sku WAF_v2 \
+  --capacity 2 \
+  --public-ip-address AppGW-PIP \
+  --http-settings-cookie-based-affinity Disabled \
+  --http-settings-protocol Http \
+  --frontend-port 80 \
+  --zones 1 2 3
+```
+
+**Application Gateway Routing:**
+
+Path-Based Routing:
+```bash
+# Create backend pools
+az network application-gateway address-pool create \
+  --gateway-name Prod-AppGW \
+  --resource-group Prod-RG \
+  --name Images-Pool \
+  --servers 10.1.1.10 10.1.1.11
+
+az network application-gateway address-pool create \
+  --gateway-name Prod-AppGW \
+  --resource-group Prod-RG \
+  --name Video-Pool \
+  --servers 10.1.1.20 10.1.1.21
+
+# Create path-based rule
+az network application-gateway url-path-map create \
+  --gateway-name Prod-AppGW \
+  --resource-group Prod-RG \
+  --name PathMap \
+  --paths /images/* \
+  --address-pool Images-Pool \
+  --default-address-pool Video-Pool \
+  --http-settings appGatewayBackendHttpSettings
+
+# Results:
+# www.contoso.com/images/* --> Images-Pool
+# www.contoso.com/video/* --> Video-Pool
+# Everything else --> Default pool
+```
+
+Multi-Site Hosting:
+```bash
+# Add listener for site1.contoso.com
+az network application-gateway http-listener create \
+  --gateway-name Prod-AppGW \
+  --resource-group Prod-RG \
+  --name Site1-Listener \
+  --frontend-port 443 \
+  --host-name site1.contoso.com \
+  --ssl-cert Site1-Cert
+
+# Add listener for site2.contoso.com
+az network application-gateway http-listener create \
+  --gateway-name Prod-AppGW \
+  --resource-group Prod-RG \
+  --name Site2-Listener \
+  --frontend-port 443 \
+  --host-name site2.contoso.com \
+  --ssl-cert Site2-Cert
+
+# Route to different backend pools based on hostname
+```
+
+Application Gateway Best Practices:
+- Use v2 SKU for all new deployments
+- Enable autoscaling (min 2, max based on load)
+- Deploy across Availability Zones (zone 1, 2, 3)
+- Use managed certificates for SSL (auto-renewal)
+- Configure custom health probes
+- Enable WAF in Prevention mode (after tuning)
+- Monitor capacity units (CU) usage
+- Use private frontend IP for internal apps
+- Configure connection draining
+- Set idle timeout appropriately (4 minutes default)
+
+### 3. Azure Front Door
+
+**Front Door Overview:**
+
+Use Cases:
+- Global load balancing
+- SSL offload at edge
+- CDN and caching
+- URL-based routing
+- WAF at edge
+- Multi-region active-active
+
+Tiers:
+```
+Standard:
+- Global load balancing
+- SSL/TLS
+- Caching
+- Basic WAF
+- Pricing: ~$35/month + data transfer
+
+Premium:
+- All Standard features
+- Private Link to backends
+- Advanced WAF with bot protection
+- Managed rules
+- Pricing: Higher base + data transfer
+```
+
+Create Front Door:
+```bash
+# Create Front Door profile
+az afd profile create \
+  --profile-name Prod-FrontDoor \
+  --resource-group Prod-RG \
+  --sku Premium_AzureFrontDoor
+
+# Create endpoint
+az afd endpoint create \
+  --profile-name Prod-FrontDoor \
+  --resource-group Prod-RG \
+  --endpoint-name www-contoso \
+  --enabled-state Enabled
+
+# Create origin group
+az afd origin-group create \
+  --profile-name Prod-FrontDoor \
+  --resource-group Prod-RG \
+  --origin-group-name WebApp-Origins \
+  --probe-request-type GET \
+  --probe-protocol Http \
+  --probe-interval-in-seconds 100 \
+  --probe-path / \
+  --sample-size 4 \
+  --successful-samples-required 3
+
+# Add origins (backends)
+az afd origin create \
+  --profile-name Prod-FrontDoor \
+  --resource-group Prod-RG \
+  --origin-group-name WebApp-Origins \
+  --origin-name EastUS-Origin \
+  --host-name webapp-eastus.azurewebsites.net \
+  --priority 1 \
+  --weight 1000 \
+  --enabled-state Enabled
+
+az afd origin create \
+  --profile-name Prod-FrontDoor \
+  --resource-group Prod-RG \
+  --origin-group-name WebApp-Origins \
+  --origin-name WestUS-Origin \
+  --host-name webapp-westus.azurewebsites.net \
+  --priority 2 \
+  --weight 1000 \
+  --enabled-state Enabled
+```
+
+Front Door Routing Methods:
+- Priority: Ordered list (failover)
+- Weighted: Distribute traffic by percentage
+- Latency: Route to closest backend (lowest latency)
+- Session affinity: Stick to same backend
+
+Front Door Best Practices:
+- Use Premium SKU for production
+- Configure health probes on all backends
+- Enable caching for static content
+- Use managed certificates
+- Configure WAF in Prevention mode
+- Monitor backend health
+- Use Private Link for backend connections
+- Configure custom domains
+- Enable logging and diagnostics
+
+Performance Optimization
+------------------------
+
+### 1. Proximity Placement Groups
+
+**Purpose:**
+
+Reduce latency between VMs by placing them physically close:
+- VMs in same datacenter building
+- Minimal network latency (sub-millisecond)
+- Required for some HPC and latency-sensitive apps
+
+Create Proximity Placement Group:
+```bash
+# Create PPG
+az ppg create \
+  --name Prod-PPG \
+  --resource-group Prod-RG \
+  --location eastus \
+  --type Standard
+
+# Deploy VM into PPG
+az vm create \
+  --name WebVM01 \
+  --resource-group Prod-RG \
+  --image UbuntuLTS \
+  --ppg Prod-PPG \
+  --size Standard_D4s_v3
+```
+
+Use Cases:
+- Database clusters (SQL Always On)
+- HPC applications
+- Real-time trading systems
+- Gaming servers
+- Low-latency analytics
+
+Limitations:
+- Limited to single datacenter (no zone redundancy)
+- May limit scaling (datacenter capacity)
+- Cannot span Availability Zones
+- Trade-off: Latency vs. Availability
+
+### 2. Accelerated Networking
+
+**Enable Accelerated Networking:**
+
+Benefits:
+- SR-IOV to VM (bypass hypervisor)
+- Up to 30 Gbps network throughput
+- Significantly lower latency
+- Lower CPU utilization
+- Lower jitter
+
+Enable on VM:
+```bash
+# Create NIC with accelerated networking
+az network nic create \
+  --name VM-NIC \
+  --resource-group Prod-RG \
+  --vnet-name Prod-VNet \
+  --subnet Web-Subnet \
+  --accelerated-networking true
+
+# Enable on existing VM (requires deallocate)
+az network nic update \
+  --name VM-NIC \
+  --resource-group Prod-RG \
+  --accelerated-networking true
+```
+
+Requirements:
+- Supported VM size (most general purpose and compute optimized)
+- Supported OS image (most Linux and Windows)
+- Minimum 2 vCPUs
+- No additional cost
+
+Best Practices:
+- Enable on all supported VMs (no reason not to)
+- Verify support before deploying
+- Test performance improvement
+- Enable during VM creation (avoid reboot)
+
+### 3. Network Performance Monitoring
+
+**Azure Network Watcher - Connection Monitor:**
+
+Monitor connectivity and performance:
+```bash
+# Create connection monitor
+az network watcher connection-monitor create \
+  --name WebApp-Monitor \
+  --resource-group Prod-RG \
+  --location eastus \
+  --test-group-name WebTests \
+  --endpoint-source-type AzureVM \
+  --endpoint-source-resource-id /subscriptions/.../WebVM01 \
+  --endpoint-dest-type AzureVM \
+  --endpoint-dest-resource-id /subscriptions/.../AppVM01 \
+  --test-config-name TCP80Test \
+  --test-config-protocol Tcp \
+  --test-config-tcp-port 80 \
+  --test-config-frequency 60
+```
+
+Metrics Collected:
+- Latency (round-trip time)
+- Packet loss percentage
+- Jitter
+- Path MTU
+- Hop count
+
+**Network Performance Monitor (NPM):**
+
+Monitor on-premises to Azure connectivity:
+- Install agents on VMs and on-premises servers
+- Measure latency and packet loss
+- Service Connectivity Monitor
+- ExpressRoute Monitor
+- Performance Monitor
+
+Cost Management
+---------------
+
+### 1. Data Transfer Costs
+
+**Pricing Overview:**
+
+Inbound Data (Ingress):
+- Into Azure: FREE
+- Between Azure regions: FREE ingress
+- From Internet: FREE
+
+Outbound Data (Egress):
+```
+Outbound from Azure:
+- First 100 GB/month: FREE
+- 100 GB - 10 TB: $0.087/GB (varies by region)
+- 10 TB - 50 TB: $0.083/GB
+- 50 TB - 150 TB: $0.070/GB
+- Over 150 TB: $0.050/GB
+
+Inter-region data transfer:
+- Between regions: ~$0.02/GB
+- Global VNet peering: ~$0.01-$0.02/GB
+- ExpressRoute inter-region: Based on circuit
+
+Intra-region data transfer:
+- Same region VNet peering: FREE
+- Same region within VNet: FREE
+- Within Availability Zone: FREE
+```
+
+**Cost Optimization Strategies:**
+
+Reduce Egress Costs:
+- Keep communicating resources in same region
+- Use regional VNet peering (free) vs. global (paid)
+- Cache content with Azure CDN
+- Compress data before transfer
+- Use Azure Front Door for edge caching
+- Archive infrequently accessed data
+
+Monitor Data Transfer:
+```bash
+# Enable NSG flow logs to analyze traffic
+# Review flow logs in Traffic Analytics
+# Identify top talkers and data transfer patterns
+```
+
+Use Cost Management:
+- Set budgets and alerts
+- Tag resources by cost center
+- Review cost analysis monthly
+- Identify unexpected data transfer
+- Optimize based on patterns
+
+### 2. Gateway and Load Balancer Costs
+
+**VPN Gateway Costs:**
+
+Pricing Model:
+- Fixed hourly cost based on SKU
+- No data transfer charges (separate)
+- Higher cost for zone-redundant SKUs
+
+Example Costs:
+```
+VpnGw1: ~$140/month
+VpnGw2: ~$360/month
+VpnGw3: ~$750/month
+VpnGw1AZ: ~$168/month (20% premium)
+```
+
+Optimization:
+- Right-size gateway SKU (don't over-provision)
+- Share single gateway across spokes (hub model)
+- Delete unused gateways (even deallocated VMs incur costs)
+- Consider VPN vs. ExpressRoute cost trade-offs
+
+**Load Balancer Costs:**
+
+Standard Load Balancer:
+- Fixed: ~$18/month
+- Processed data: $0.005/GB
+- Rules: Free (first 5), $0.01/hour per additional
+
+Application Gateway:
+- Fixed: ~$0.20/hour (~$146/month)
+- Capacity Units: $0.008/CU-hour
+- Data processed: $0.008/GB
+
+Front Door:
+- Base: ~$35/month (Standard), higher for Premium
+- Outbound data transfer: $0.011-$0.135/GB (varies)
+- Inbound data: $0.0075-$0.020/GB
+
+Optimization:
+- Consolidate multiple gateways
+- Use autoscaling (Application Gateway v2)
+- Monitor CU usage
+- Delete unused resources
+
+### 3. ExpressRoute Costs
+
+**Pricing Models:**
+
+Metered Data:
+- Fixed port cost (based on bandwidth)
+- Outbound data charges ($0.025-$0.035/GB)
+- Inbound data: FREE
+- Best for: Variable, unpredictable traffic
+
+Unlimited Data:
+- Fixed monthly cost (higher than metered base)
+- Unlimited inbound and outbound
+- Best for: Consistent, high-volume traffic
+
+Cost Comparison Example (1 Gbps circuit):
+```
+Metered:
+- Port: ~$685/month
+- Data (500 GB out): $12.50
+- Total: ~$697/month
+
+Unlimited:
+- Port: ~$2,640/month
+- Data: Unlimited
+- Total: ~$2,640/month
+
+Break-even: ~78 TB/month
+```
+
+Optimization:
+- Choose appropriate pricing model (metered vs. unlimited)
+- Monitor bandwidth utilization
+- Right-size circuit bandwidth
+- Use ExpressRoute Local for single-region (cheaper)
+- Implement caching to reduce data transfer
+
+Naming Conventions and Tagging
+-------------------------------
+
+### 1. Resource Naming Standards
+
+**Naming Convention Pattern:**
+
+Recommended Format:
+```
+{Resource Type}-{Workload/App}-{Environment}-{Region}-{Instance}
+
+Examples:
+vnet-hub-prod-eus-01
+vnet-spoke-ecommerce-prod-eus-01
+nsg-web-prod-eus-01
+pip-firewall-prod-eus-01
+vpngw-hub-prod-eus-01
+```
+
+Resource Type Abbreviations:
+```
+vnet: Virtual Network
+snet: Subnet
+nsg: Network Security Group
+asg: Application Security Group
+rt: Route Table
+pip: Public IP Address
+vpngw: VPN Gateway
+ergw: ExpressRoute Gateway
+fw: Azure Firewall
+bastion: Azure Bastion
+lb: Load Balancer
+agw: Application Gateway
+afd: Azure Front Door
+tm: Traffic Manager
+```
+
+Environment Codes:
+```
+dev: Development
+test: Testing/QA
+stg: Staging
+prod: Production
+dr: Disaster Recovery
+```
+
+Region Codes:
+```
+eus: East US
+eus2: East US 2
+cus: Central US
+wus: West US
+wus2: West US 2
+neu: North Europe
+weu: West Europe
+```
+
+### 2. Resource Tagging Strategy
+
+**Required Tags:**
+
+Minimum Tag Set:
+```json
+{
+  "Environment": "Production",
+  "Owner": "NetworkTeam@contoso.com",
+  "CostCenter": "IT-1000",
+  "Application": "ECommerce",
+  "BusinessUnit": "Sales",
+  "Criticality": "High",
+  "DataClassification": "Confidential",
+  "ManagedBy": "CloudOps"
+}
+```
+
+Apply Tags:
+```bash
+# Tag VNet
+az network vnet update \
+  --name vnet-hub-prod-eus-01 \
+  --resource-group Network-RG \
+  --tags Environment=Production Owner=NetworkTeam CostCenter=IT-1000
+
+# Tag multiple resources
+az resource tag \
+  --tags Environment=Production \
+  --ids $(az resource list --resource-group Network-RG --query "[].id" -o tsv)
+```
+
+Tag Best Practices:
+- Enforce tags with Azure Policy
+- Use consistent capitalization
+- Limit tag values to predefined list
+- Apply tags at resource group level (inherited)
+- Use tags for cost allocation
+- Automate tagging in deployment pipelines
+- Review and clean up tags quarterly
+
+Monitoring and Diagnostics
+---------------------------
+
+### 1. Diagnostic Settings
+
+**Enable Diagnostics on All Network Resources:**
+
+Resources to Enable:
+- Virtual Networks
+- VPN Gateways
+- ExpressRoute Gateways
+- Azure Firewall
+- Application Gateway
+- Load Balancers
+- Network Security Groups (flow logs)
+- Public IPs
+
+Configure Diagnostic Settings:
+```bash
+# Enable diagnostics on VPN gateway
+az monitor diagnostic-settings create \
+  --name VPN-Diagnostics \
+  --resource /subscriptions/{sub}/resourceGroups/Hub-RG/providers/Microsoft.Network/virtualNetworkGateways/Hub-VPN-GW \
+  --workspace /subscriptions/{sub}/resourceGroups/Logging-RG/providers/Microsoft.OperationalInsights/workspaces/LogAnalytics \
+  --logs '[{"category":"GatewayDiagnosticLog","enabled":true},{"category":"TunnelDiagnosticLog","enabled":true}]' \
+  --metrics '[{"category":"AllMetrics","enabled":true}]'
+```
+
+Log Retention:
+- Active analysis: Log Analytics (90-730 days)
+- Long-term archive: Storage Account (365+ days)
+- Real-time streaming: Event Hub (SIEM integration)
+
+### 2. Azure Monitor Alerts
+
+**Critical Network Alerts:**
+
+VPN Gateway Down:
+```bash
+az monitor metrics alert create \
+  --name VPN-Gateway-Down \
+  --resource-group Hub-RG \
+  --scopes /subscriptions/{sub}/resourceGroups/Hub-RG/providers/Microsoft.Network/virtualNetworkGateways/Hub-VPN-GW \
+  --condition "max Bandwidth == 0" \
+  --window-size 5m \
+  --evaluation-frequency 1m \
+  --description "VPN Gateway has no bandwidth"
+```
+
+High Network Utilization:
+```bash
+az monitor metrics alert create \
+  --name High-Bandwidth-Usage \
+  --resource-group Hub-RG \
+  --scopes /subscriptions/{sub}/resourceGroups/Hub-RG/providers/Microsoft.Network/virtualNetworkGateways/Hub-VPN-GW \
+  --condition "avg Bandwidth > 900000000" \
+  --window-size 15m \
+  --description "VPN Gateway bandwidth over 90%"
+```
+
+Recommended Alerts:
+- VPN tunnel down
+- ExpressRoute circuit down
+- Firewall threat detected
+- Application Gateway backend unhealthy
+- High packet drop rate
+- DDoS attack detected
+- Peering disconnected
+
+### 3. Network Watcher Tools
+
+**Essential Network Watcher Tools:**
+
+IP Flow Verify:
+- Test if traffic allowed by NSG
+- Identify blocking NSG rule
+- Direction: Inbound or Outbound
+
+Next Hop:
+- Determine routing decision
+- Identify UDR or system route
+- Troubleshoot routing issues
+
+Connection Troubleshoot:
+- Test end-to-end connectivity
+- Identify where connectivity breaks
+- Checks NSG, UDR, effective routes
+
+Packet Capture:
+- Capture network traffic
+- Filter by protocol, IP, port
+- Download PCAP for Wireshark analysis
+
+VPN Troubleshoot:
+- Diagnose VPN gateway issues
+- Check tunnel status
+- Identify configuration problems
+
+Best Practices Checklist
+-------------------------
+
+### Planning and Design
+- [ ] IP address space planned globally (no overlaps)
+- [ ] Naming convention documented and enforced
+- [ ] Tagging strategy defined and implemented
+- [ ] Hub-and-spoke or Virtual WAN architecture chosen
+- [ ] Multi-region strategy defined (if applicable)
+- [ ] Hybrid connectivity planned (VPN/ExpressRoute)
+- [ ] DNS architecture designed
+- [ ] Network diagram created and maintained
+
+### Implementation
+- [ ] VNets sized appropriately (room for growth)
+- [ ] Subnets sized correctly (/24 or larger)
+- [ ] VNet peering configured with correct settings
+- [ ] UDRs implemented for traffic routing
+- [ ] Gateway redundancy configured (active-active)
+- [ ] BGP enabled on VPN gateways
+- [ ] Accelerated networking enabled on VMs
+- [ ] DNS resolution working (Azure and hybrid)
+
+### Performance
+- [ ] Gateway SKUs sized appropriately
+- [ ] Load balancers configured with health probes
+- [ ] Autoscaling enabled where supported
+- [ ] Proximity placement groups used where needed
+- [ ] Connection monitoring configured
+- [ ] Performance baselines established
+- [ ] Latency and throughput tested
+
+### Cost Optimization
+- [ ] Data transfer patterns analyzed
+- [ ] Unused resources identified and removed
+- [ ] Gateway SKUs right-sized
+- [ ] Regional deployment preferred over global
+- [ ] Cost alerts configured
+- [ ] Resource tags applied for cost tracking
+- [ ] Monthly cost review scheduled
+
+### Operations
+- [ ] Diagnostic logging enabled on all resources
+- [ ] Logs sent to Log Analytics workspace
+- [ ] Critical alerts configured
+- [ ] Network monitoring dashboard created
+- [ ] Runbooks documented for common tasks
+- [ ] Change management process defined
+- [ ] Regular network reviews scheduled (monthly/quarterly)
+
+### Documentation
+- [ ] Network architecture diagram maintained
+- [ ] IP allocation spreadsheet updated
+- [ ] DNS zones documented
+- [ ] Firewall rules documented with business justification
+- [ ] Naming convention guide published
+- [ ] Operational procedures documented
+- [ ] Disaster recovery procedures tested
+
+Documentation References
+------------------------
+
+[1] Microsoft Azure. (2024). Azure Networking Documentation.
+    https://learn.microsoft.com/en-us/azure/networking/
+    Official Azure networking documentation.
+
+[2] Microsoft Azure. (2024). Hub-Spoke Network Topology.
+    https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/hybrid-networking/hub-spoke
+    Reference architecture for hub-spoke design.
+
+[3] Microsoft Azure. (2024). Virtual Network Documentation.
+    https://learn.microsoft.com/en-us/azure/virtual-network/
+    VNet planning and configuration.
+
+[4] Microsoft Azure. (2024). VNet Peering Documentation.
+    https://learn.microsoft.com/en-us/azure/virtual-network/virtual-network-peering-overview
+    VNet peering concepts and configuration.
+
+[5] Microsoft Azure. (2024). VPN Gateway Documentation.
+    https://learn.microsoft.com/en-us/azure/vpn-gateway/
+    VPN gateway planning and deployment.
+
+[6] Microsoft Azure. (2024). ExpressRoute Documentation.
+    https://learn.microsoft.com/en-us/azure/expressroute/
+    ExpressRoute connectivity and design.
+
+[7] Microsoft Azure. (2024). Azure DNS Documentation.
+    https://learn.microsoft.com/en-us/azure/dns/
+    DNS planning and private zones.
+
+[8] Microsoft Azure. (2024). Load Balancer Documentation.
+    https://learn.microsoft.com/en-us/azure/load-balancer/
+    Load balancer design and configuration.
+
+[9] Microsoft Azure. (2024). Application Gateway Documentation.
+    https://learn.microsoft.com/en-us/azure/application-gateway/
+    Application Gateway and WAF.
+
+[10] Microsoft Azure. (2024). Azure Front Door Documentation.
+     https://learn.microsoft.com/en-us/azure/frontdoor/
+     Global load balancing and CDN.
+
+[11] Microsoft Azure. (2024). Azure Virtual WAN Documentation.
+     https://learn.microsoft.com/en-us/azure/virtual-wan/
+     Virtual WAN architecture and deployment.
+
+[12] Microsoft Azure. (2024). Network Watcher Documentation.
+     https://learn.microsoft.com/en-us/azure/network-watcher/
+     Network monitoring and diagnostics.
+
+[13] Microsoft Azure. (2024). Azure Well-Architected Framework - Networking.
+     https://learn.microsoft.com/en-us/azure/architecture/framework/services/networking/
+     Networking best practices and guidance.
+
+[14] Microsoft Azure. (2024). Cloud Adoption Framework - Network Topology.
+     https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/define-an-azure-network-topology
+     Enterprise-scale network topology guidance.
+
+[15] Microsoft Azure. (2024). Naming and Tagging Conventions.
+     https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/naming-and-tagging
+     Recommended naming and tagging standards.
+
+Summary
+-------
+
+Effective Azure networking requires careful planning, thoughtful architecture, and operational discipline:
+
+**Key Success Factors:**
+
+1. **Planning**: Invest time upfront in IP planning and architecture design
+2. **Consistency**: Use naming conventions and tagging throughout
+3. **Documentation**: Maintain current network diagrams and documentation
+4. **Monitoring**: Implement comprehensive monitoring and alerting
+5. **Security**: Layer security controls (covered in separate security guide)
+6. **Cost Management**: Monitor and optimize network costs continuously
+7. **Automation**: Use Infrastructure as Code for repeatable deployments
+
+**Maturity Levels:**
+
+Level 1 - Basic:
+- Single VNet
+- Manual configuration
+- Basic monitoring
+- Minimal documentation
+
+Level 2 - Intermediate:
+- Hub-spoke topology
+- VPN connectivity
+- Standard load balancers
+- Basic automation
+- Regular documentation
+
+Level 3 - Advanced:
+- Multi-region deployment
+- ExpressRoute connectivity
+- Virtual WAN (if applicable)
+- Comprehensive monitoring
+- Full automation (IaC)
+- Complete documentation
+
+Level 4 - Optimized:
+- Global anycast architecture
+- Automated failover and recovery
+- Proactive monitoring and alerting
+- Self-service network provisioning
+- Continuous optimization
+- Living documentation
+
+Azure networking is complex but provides powerful capabilities when designed correctly. By following these best practices, organizations can build scalable, performant, secure, and cost-effective network infrastructure in Azure.

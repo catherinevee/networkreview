@@ -1,0 +1,1516 @@
+================================================================================
+                    HOW BGP (BORDER GATEWAY PROTOCOL) WORKS
+================================================================================
+
+BGP is the routing protocol that makes the Internet work. It's a path-vector
+protocol used to exchange routing information between autonomous systems (AS).
+BGP is highly scalable, policy-driven, and designed for inter-domain routing,
+making it the de facto standard for Internet routing.
+
+================================================================================
+1. BGP FUNDAMENTALS
+================================================================================
+
+1.1 What is BGP?
+----------------
+- Border Gateway Protocol (BGP) is the routing protocol of the Internet
+- Path-vector protocol (similar to distance-vector but carries full AS path)
+- Operates between Autonomous Systems (inter-domain routing)
+- Also used within large enterprises and data centers (iBGP)
+- Current version: BGP-4 (RFC 4271)
+- Uses TCP port 179 for reliable transport
+
+1.2 Key Characteristics
+-----------------------
+- Scalable: Routes the entire Internet (900,000+ routes as of 2024)
+- Policy-based: Administrative control over routing decisions
+- Classless: Supports CIDR and route aggregation
+- Slow to converge: Designed for stability over speed
+- Rich attributes: Multiple path attributes for policy implementation
+- Application-oriented: Route selection based on business policies, not metrics
+
+1.3 Autonomous System (AS)
+---------------------------
+An Autonomous System is a collection of IP networks under a single
+administrative control that presents a common routing policy to the Internet.
+
+AS Number (ASN) Types:
+- 16-bit ASNs: 1 - 65,535 (original format)
+  - 1 - 64,511: Public ASNs (assigned by RIRs)
+  - 64,512 - 65,534: Private ASNs (like RFC 1918 for IP)
+  - 65,535: Reserved
+
+- 32-bit ASNs: 0 - 4,294,967,295 (RFC 6793)
+  - 0, 65,536 - 65,551, 4,200,000,000 - 4,294,967,294: Reserved
+  - 65,552 - 131,071: Public ASNs
+  - 4,200,000,000 - 4,294,967,294: Private ASNs
+
+ASN Notation:
+- Asplain: 65536 (decimal)
+- Asdot: 1.0 (high.low format)
+
+1.4 BGP Types
+-------------
+External BGP (eBGP):
+- Runs between routers in different autonomous systems
+- Default administrative distance: 20
+- TTL typically set to 1 (directly connected)
+- Can use eBGP multihop for non-directly connected peers
+- Next-hop address changes when advertised to eBGP peer
+
+Internal BGP (iBGP):
+- Runs between routers within the same AS
+- Default administrative distance: 200
+- TTL typically 255 (can be multiple hops)
+- Next-hop address NOT changed when advertised to iBGP peer
+- Requires full mesh or route reflectors for scaling
+
+================================================================================
+2. BGP SESSION ESTABLISHMENT
+================================================================================
+
+2.1 BGP Neighbor States (FSM - Finite State Machine)
+-----------------------------------------------------
+BGP goes through six states when establishing a session:
+
+1. IDLE
+   - Initial state
+   - Refuses all incoming connections
+   - Waits for Start event (manual config or restart)
+   - Initializes resources and resets ConnectRetry timer
+
+2. CONNECT
+   - Waits for TCP three-way handshake to complete
+   - If successful → transitions to OpenSent
+   - If TCP fails → transitions to Active
+   - Continues to listen for incoming connections
+
+3. ACTIVE
+   - Attempting to establish TCP connection
+   - If connection succeeds → transitions to OpenSent
+   - If ConnectRetry timer expires → transitions back to Connect
+   - This state indicates a problem if router stays here
+
+4. OPENSENT
+   - TCP connection established
+   - BGP OPEN message sent to peer
+   - Waiting for OPEN message from peer
+   - If valid OPEN received → transitions to OpenConfirm
+   - If error in OPEN → sends NOTIFICATION and transitions to IDLE
+
+5. OPENCONFIRM
+   - OPEN message received and accepted
+   - Waiting for KEEPALIVE or NOTIFICATION
+   - If KEEPALIVE received → transitions to Established
+   - Starts sending KEEPALIVE messages
+
+6. ESTABLISHED
+   - Session fully established
+   - Peers exchange UPDATE messages
+   - Periodic KEEPALIVE messages sent
+   - If NOTIFICATION or TCP error → transitions to IDLE
+
+Best State: ESTABLISHED
+Problem State: ACTIVE (indicates TCP connection issues)
+
+2.2 BGP Message Types
+----------------------
+BGP uses four message types, all sent over TCP port 179:
+
+1. OPEN Message
+   - First message sent after TCP connection established
+   - Contains:
+     - BGP version (always 4)
+     - Local AS number
+     - Hold time (negotiated to lower value)
+     - BGP router ID (must be unique, typically a loopback IP)
+     - Optional parameters (capabilities)
+
+2. UPDATE Message
+   - Advertises new routes
+   - Withdraws previously advertised routes
+   - Can contain both in same message
+   - Contains:
+     - Network Layer Reachability Information (NLRI) - prefixes
+     - Path attributes
+     - Withdrawn routes
+
+3. KEEPALIVE Message
+   - Sent periodically to maintain session
+   - Default: Every 60 seconds (1/3 of hold time)
+   - Contains only BGP header (19 bytes)
+   - Confirms that connection is still alive
+
+4. NOTIFICATION Message
+   - Sent when error detected
+   - Always causes session to close (transitions to IDLE)
+   - Contains error code and subcode
+   - Examples: OPEN message error, UPDATE message error, hold time expired
+
+2.3 BGP Timers
+--------------
+Keepalive Timer:
+- Default: 60 seconds
+- How often KEEPALIVE messages sent
+- Typically 1/3 of Hold time
+
+Hold Timer:
+- Default: 180 seconds
+- If no message received within this time, session declared down
+- Negotiated to lower value between peers
+- Can be set to 0 to disable (not recommended)
+
+ConnectRetry Timer:
+- Default: 120 seconds
+- How long to wait before retrying TCP connection
+
+Advertisement Interval (MinRouteAdvertisementInterval):
+- eBGP: 30 seconds (default)
+- iBGP: 0 seconds (default, can send immediately)
+- Minimum time between UPDATE messages for same prefix
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.2 timers 30 90
+ ! keepalive 30s, hold 90s
+
+================================================================================
+3. BGP ATTRIBUTES
+================================================================================
+
+BGP uses path attributes to select the best path to a destination. Attributes
+are classified by type and how they're handled.
+
+3.1 Attribute Types
+-------------------
+Well-known Mandatory:
+- Must be recognized by all BGP implementations
+- Must be present in every UPDATE message
+- Examples: ORIGIN, AS_PATH, NEXT_HOP
+
+Well-known Discretionary:
+- Must be recognized by all BGP implementations
+- Optional in UPDATE messages
+- Examples: LOCAL_PREF, ATOMIC_AGGREGATE
+
+Optional Transitive:
+- May or may not be recognized
+- If not recognized, marked as partial and passed to other peers
+- Examples: AGGREGATOR, COMMUNITY
+
+Optional Non-transitive:
+- May or may not be recognized
+- If not recognized, ignored (not passed to other peers)
+- Examples: MED, ORIGINATOR_ID, CLUSTER_LIST
+
+3.2 Common BGP Attributes
+--------------------------
+
+1. ORIGIN (Well-known Mandatory)
+   - Indicates how prefix was introduced into BGP
+   - Three values:
+     - IGP (i): Network command or redistribution from IGP (preferred)
+     - EGP (e): Learned from EGP (historical, rarely used)
+     - Incomplete (?): Redistributed from another source
+   - Lower is better: IGP > EGP > Incomplete
+
+2. AS_PATH (Well-known Mandatory)
+   - Ordered list of ASNs the route has traversed
+   - Used for loop prevention (if local ASN in path, reject)
+   - Used in path selection (shorter is better)
+   - eBGP: Prepends local ASN when advertising
+   - iBGP: Does not modify AS_PATH
+
+   Example: 65001 65002 65003
+   - Route originated in AS 65003
+   - Passed through AS 65002
+   - Currently in AS 65001
+
+   AS_PATH Manipulation:
+   - Prepending: Add extra ASN to make path less preferred
+     route-map PREPEND permit 10
+      set as-path prepend 65001 65001 65001
+
+3. NEXT_HOP (Well-known Mandatory)
+   - IP address of the next router to reach the destination
+   - eBGP: Changes to advertising router's IP
+   - iBGP: Preserved (does NOT change)
+   - Must be reachable via IGP or static route
+
+   Next-hop Behavior:
+   - eBGP: Set to interface IP of advertising router
+   - iBGP: Unchanged from eBGP advertisement
+   - Next-hop-self: Forces next-hop to local router's IP
+
+4. LOCAL_PREF (Well-known Discretionary)
+   - Used within an AS (iBGP only)
+   - NOT advertised to eBGP peers
+   - Indicates preferred exit point from AS
+   - Higher is better
+   - Default: 100
+   - Range: 0 - 4,294,967,295
+
+   Use case: Prefer primary ISP over backup
+   route-map PRIMARY permit 10
+    set local-preference 200
+
+5. MULTI_EXIT_DISC (MED) (Optional Non-transitive)
+   - Multi-Exit Discriminator
+   - Suggests to external AS which path to prefer when multiple entry points
+   - Lower is better
+   - Default: 0 (or infinite if not set, depending on vendor)
+   - NOT propagated beyond neighboring AS
+
+   Use case: Load balance across multiple links to same AS
+   route-map SET-MED permit 10
+    set metric 50
+
+6. COMMUNITY (Optional Transitive)
+   - 32-bit tag attached to routes
+   - Used for route filtering and policy implementation
+   - Format: ASN:Value (e.g., 65001:100)
+   - Multiple communities can be attached to single route
+
+   Well-known Communities (RFC 1997):
+   - NO_EXPORT (0xFFFFFF01): Don't advertise to eBGP peers
+   - NO_ADVERTISE (0xFFFFFF02): Don't advertise to any peer
+   - NO_EXPORT_SUBCONFED (0xFFFFFF03): Don't advertise outside confederation
+   - BLACKHOLE: Trigger remotely triggered blackhole (RTBH)
+
+   Configuration:
+   route-map TAG permit 10
+    set community 65001:100
+
+7. WEIGHT (Cisco Proprietary)
+   - NOT a BGP attribute (local to router only)
+   - Cisco-specific path selection criterion
+   - Highest weight wins
+   - Default: 0 for learned routes, 32768 for locally originated
+   - Range: 0 - 65,535
+
+8. ATOMIC_AGGREGATE (Well-known Discretionary)
+   - Indicates route is an aggregate and some path information is lost
+   - Automatically set when route aggregation performed
+
+9. AGGREGATOR (Optional Transitive)
+   - Contains ASN and router ID of router that performed aggregation
+
+10. ORIGINATOR_ID (Optional Non-transitive)
+    - Used by route reflectors
+    - Contains router ID of originator within same AS
+    - Prevents routing loops in route reflector environments
+
+11. CLUSTER_LIST (Optional Non-transitive)
+    - Used by route reflectors
+    - Contains cluster IDs the route has passed through
+    - Prevents routing loops in route reflector environments
+
+================================================================================
+4. BGP PATH SELECTION ALGORITHM
+================================================================================
+
+BGP uses a complex algorithm to select the best path when multiple paths exist
+to the same destination. The process is deterministic and follows this order:
+
+4.1 Best Path Selection Process (Cisco Implementation)
+-------------------------------------------------------
+
+1. WEIGHT (Highest)
+   - Cisco-specific, local to router
+   - Higher is better
+   - Default: 32768 (local), 0 (received)
+
+2. LOCAL_PREFERENCE (Highest)
+   - Within AS only
+   - Higher is better
+   - Default: 100
+
+3. Locally Originated (Prefer)
+   - Prefer routes originated by local router
+   - network command > aggregate > redistribution
+
+4. AS_PATH (Shortest)
+   - Shorter AS path preferred
+   - Can disable with "bgp bestpath as-path multipath-relax"
+
+5. ORIGIN (Lowest)
+   - IGP (i) > EGP (e) > Incomplete (?)
+
+6. MED (Lowest)
+   - Multi-Exit Discriminator
+   - Lower is better
+   - Compared only if paths from same AS (by default)
+   - "bgp always-compare-med" changes behavior
+
+7. eBGP over iBGP (Prefer eBGP)
+   - External paths preferred over internal
+
+8. IGP Metric to NEXT_HOP (Lowest)
+   - Prefer path with lowest IGP cost to BGP next-hop
+   - "bgp bestpath igp-metric ignore" disables this
+
+9. Oldest Route (Prefer)
+   - For eBGP paths only
+   - Prefer stable routes
+   - Minimize flapping
+
+10. Router ID (Lowest)
+    - Prefer path from neighbor with lowest router ID
+    - Tie-breaker
+
+11. Neighbor IP Address (Lowest)
+    - Final tie-breaker
+    - Prefer path from neighbor with lowest IP address
+
+Mnemonic: "We Love Oranges AS Oranges Mean Pure Refreshment, Especially In NY"
+(Weight, Local_Pref, Originate, AS_PATH, Origin, MED, Paths, Router-ID,
+ External, IGP metric, Neighbor IP, Yay!)
+
+4.2 Path Selection Commands
+----------------------------
+Cisco - View best path decision:
+show ip bgp 10.1.1.0/24
+show ip bgp neighbors 10.1.1.1 advertised-routes
+show ip bgp neighbors 10.1.1.1 routes
+
+Juniper - View best path:
+show route protocol bgp 10.1.1.0/24 detail
+show bgp neighbor 10.1.1.1
+
+================================================================================
+5. BGP ROUTE ADVERTISEMENT RULES
+================================================================================
+
+5.1 iBGP Rules
+--------------
+1. iBGP Split Horizon Rule:
+   - Routes learned from iBGP peer NOT advertised to other iBGP peers
+   - Prevents routing loops within AS
+   - Requires full mesh or route reflectors
+
+2. Next-hop Preservation:
+   - Next-hop NOT changed when advertising to iBGP peer
+   - Can cause reachability issues if next-hop not in IGP
+   - Solution: next-hop-self
+
+3. Synchronization (Historical):
+   - BGP route not advertised until learned via IGP
+   - Disabled by default in modern IOS (default off since IOS 12.2)
+
+5.2 eBGP Rules
+--------------
+1. AS_PATH Loop Prevention:
+   - If local ASN appears in AS_PATH, reject route
+   - Prevents routing loops between ASes
+   - Can override with "allowas-in" (use with caution)
+
+2. Next-hop Change:
+   - Next-hop set to advertising router's interface IP
+   - Exception: next-hop unchanged on shared media (if next-hop-unchanged)
+
+3. TTL Security:
+   - Default TTL = 1 (directly connected)
+   - Provides basic security (GTSM - Generalized TTL Security Mechanism)
+   - eBGP multihop: TTL > 1 for non-directly connected peers
+
+5.3 Advertisement Conditions
+-----------------------------
+For a route to be advertised via BGP:
+1. Route must be in BGP table
+2. Route must be best path (unless "advertise-best-external" or add-path)
+3. Route must not be filtered by outbound policy
+4. Proper AS_PATH (no loops detected)
+5. Next-hop must be reachable (for iBGP)
+
+================================================================================
+6. BGP SCALABILITY MECHANISMS
+================================================================================
+
+6.1 Route Reflectors (RR)
+--------------------------
+Solves iBGP full-mesh problem without breaking split-horizon rule.
+
+Roles:
+- Route Reflector (RR): Reflects routes between clients
+- Route Reflector Client: Does not need to peer with all iBGP routers
+- Non-client: Traditional iBGP peer of RR
+
+Rules:
+1. Routes from client → Reflected to all clients and non-clients
+2. Routes from non-client → Reflected to clients only
+3. Routes from eBGP → Reflected to clients and non-clients
+
+Attributes:
+- ORIGINATOR_ID: Prevents loops (rejects if sees own router ID)
+- CLUSTER_LIST: Tracks RR clusters traversed
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.1 remote-as 65001
+ neighbor 10.1.1.1 route-reflector-client
+
+Route Reflector Design:
+- Hierarchical: Multiple levels of RRs
+- Redundant: Multiple RRs per cluster (same cluster ID)
+- Cluster ID: Identifies RR cluster (typically router ID of primary RR)
+
+Best Practices:
+✓ Use redundant RRs (at least 2 per cluster)
+✓ All RRs in cluster should have same cluster ID
+✓ Consider physical topology when designing RR hierarchy
+✓ Monitor RR CPU and memory usage
+
+6.2 Confederation
+-----------------
+Divides large AS into smaller sub-ASes for scalability.
+
+Concept:
+- Large AS divided into multiple sub-ASes
+- Each sub-AS runs iBGP internally
+- Sub-ASes connected via "confederation eBGP"
+- External peers see single AS number
+
+AS Numbers:
+- Member AS: Private ASN (64,512 - 65,534) used internally
+- Confederation ID: Public ASN visible to outside world
+
+Configuration (Cisco):
+router bgp 65101
+ bgp confederation identifier 65001
+ bgp confederation peers 65102 65103
+ neighbor 10.1.1.1 remote-as 65102
+
+Advantages:
+- Reduces iBGP mesh requirements
+- Preserves LOCAL_PREF and MED across sub-ASes
+- AS_PATH includes confederation segments
+
+Disadvantages:
+- More complex than route reflectors
+- Less commonly used today
+- Requires renumbering internal ASes
+
+6.3 Peer Groups
+---------------
+Optimization for routers with many neighbors with same policy.
+
+Concept:
+- Group neighbors with identical outbound policy
+- Updates generated once per peer group (not per neighbor)
+- Reduces CPU and memory usage
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor CUSTOMERS peer-group
+ neighbor CUSTOMERS remote-as 65002
+ neighbor CUSTOMERS route-map SET-POLICY out
+ neighbor 10.1.1.1 peer-group CUSTOMERS
+ neighbor 10.1.1.2 peer-group CUSTOMERS
+
+Note: Modern IOS automatically optimizes update generation, making peer
+groups less critical, but still useful for configuration clarity.
+
+6.4 BGP Add-Path
+----------------
+Allows advertisement of multiple paths for same prefix.
+
+Without Add-Path:
+- Only best path advertised to peers
+- Limits path diversity
+
+With Add-Path (RFC 7911):
+- Multiple paths advertised (all, backup, best N, etc.)
+- Improves convergence and load balancing
+- Increases memory/CPU usage
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.1 advertise additional-paths all
+ neighbor 10.1.1.1 capability additional-paths send
+
+================================================================================
+7. BGP SECURITY
+================================================================================
+
+7.1 BGP Session Security
+-------------------------
+
+MD5 Authentication (RFC 2385):
+- TCP MD5 signature option
+- Authenticates BGP session
+- Prevents session hijacking
+- Shared secret between peers
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.1 password MySecretKey123
+
+Limitations:
+- Shared secret management
+- No key rotation mechanism
+- Vulnerable to brute force (use strong passwords)
+
+TCP AO (Authentication Option) - RFC 5925:
+- Successor to MD5
+- Supports key rotation
+- Stronger cryptographic algorithms
+- Not widely deployed yet
+
+7.2 TTL Security (GTSM)
+-----------------------
+Generalized TTL Security Mechanism (RFC 5082)
+
+Concept:
+- eBGP packets expected with TTL = 255
+- Packets with lower TTL rejected
+- Prevents remote attackers (can't set TTL = 255 remotely)
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.1 ttl-security hops 1
+
+7.3 Prefix Filtering
+--------------------
+
+Basic Prefix Lists:
+ip prefix-list ALLOW-CUSTOMER permit 192.0.2.0/24
+
+AS_PATH Filtering:
+ip as-path access-list 10 permit ^65002_
+! Only allows routes directly from AS 65002
+
+Bogon Filtering:
+- Filter bogon prefixes (reserved, private, unallocated)
+- Examples: 0.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 224.0.0.0/4
+
+Best Practices:
+✓ Filter martian addresses (RFC 1918, link-local, multicast)
+✓ Enforce maximum prefix length (/24 for IPv4, /48 for IPv6)
+✓ Filter default route (unless specifically wanted)
+✓ Filter your own prefixes in inbound direction
+
+7.4 Maximum Prefix Limit
+-------------------------
+Protects against route table overflow or misconfiguration.
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.1 maximum-prefix 100 80
+ ! Warn at 80%, tear down session at 100 prefixes
+
+Options:
+- Warning only: Log when threshold reached
+- Shutdown: Tear down session (requires manual intervention)
+- Restart: Automatically re-enable after timer
+
+7.5 Resource Public Key Infrastructure (RPKI)
+----------------------------------------------
+Validates origin AS for IP prefixes.
+
+Components:
+- ROA (Route Origin Authorization): Cryptographically signed object
+- RPKI Cache: Local cache of ROA data
+- RTR (RPKI to Router) Protocol: RFC 6810
+
+Validation States:
+- Valid: Prefix-AS matches ROA
+- Invalid: Prefix-AS contradicts ROA
+- Unknown: No ROA exists
+
+Configuration (Cisco IOS-XR):
+router bgp 65001
+ bgp bestpath origin-as use validity
+ rpki server 10.1.1.1
+  transport tcp port 323
+
+Benefits:
+- Prevents route hijacking
+- Validates origin AS
+- Growing deployment (major ISPs, IXPs)
+
+7.6 BGPsec (Future)
+-------------------
+- Secures entire AS_PATH (not just origin)
+- Cryptographic signatures
+- Still in development/deployment
+- RFC 8205
+
+================================================================================
+8. BGP ROUTE INJECTION AND AGGREGATION
+================================================================================
+
+8.1 Advertising Routes into BGP
+--------------------------------
+
+Method 1: Network Command (Preferred)
+- Advertises exact prefix if in routing table
+- Must exist in routing table (from IGP, static, connected)
+- Most precise control
+
+Configuration:
+router bgp 65001
+ network 192.0.2.0 mask 255.255.255.0
+
+Method 2: Redistribution
+- Redistributes routes from IGP or static
+- Less control, can advertise unwanted routes
+- Use with caution and route-maps
+
+Configuration:
+router bgp 65001
+ redistribute ospf 1 route-map FILTER
+
+Method 3: Aggregation
+- Summarizes multiple prefixes into one
+- Reduces routing table size
+- Can use summary-only to suppress specifics
+
+Configuration:
+router bgp 65001
+ aggregate-address 192.0.2.0 255.255.254.0 summary-only
+
+8.2 Route Aggregation
+---------------------
+
+Simple Aggregation:
+- Creates aggregate with ATOMIC_AGGREGATE attribute
+- Preserves more specific routes
+
+Configuration (Cisco):
+router bgp 65001
+ aggregate-address 10.0.0.0 255.255.0.0
+
+Summary-only Aggregation:
+- Suppresses more specific routes
+- Only advertises aggregate
+
+Configuration (Cisco):
+router bgp 65001
+ aggregate-address 10.0.0.0 255.255.0.0 summary-only
+
+AS-SET Aggregation:
+- Includes all AS numbers from component routes in AS_PATH
+- Preserves AS_PATH information
+- Prevents loops but creates unordered AS_SET
+
+Configuration (Cisco):
+router bgp 65001
+ aggregate-address 10.0.0.0 255.255.0.0 as-set
+
+Conditional Aggregation:
+- Advertise aggregate only if certain conditions met
+
+Configuration (Cisco):
+router bgp 65001
+ aggregate-address 10.0.0.0 255.255.0.0 suppress-map SUPPRESS
+
+================================================================================
+9. BGP MULTIPROTOCOL EXTENSIONS (MP-BGP)
+================================================================================
+
+9.1 Address Family Identifier (AFI/SAFI)
+-----------------------------------------
+MP-BGP (RFC 4760) extends BGP to carry multiple address families.
+
+AFI (Address Family Identifier):
+- 1: IPv4
+- 2: IPv6
+- 25: L2VPN
+
+SAFI (Subsequent Address Family Identifier):
+- 1: Unicast
+- 2: Multicast
+- 4: MPLS-labeled
+- 128: MPLS VPN
+- 70: EVPN
+
+Common Address Families:
+- IPv4 Unicast (AFI=1, SAFI=1): Traditional IPv4 routing
+- IPv6 Unicast (AFI=2, SAFI=1): IPv6 routing
+- VPNv4 (AFI=1, SAFI=128): MPLS L3VPN for IPv4
+- VPNv6 (AFI=2, SAFI=128): MPLS L3VPN for IPv6
+- L2VPN EVPN (AFI=25, SAFI=70): EVPN for VXLAN
+
+9.2 MP-BGP Configuration
+------------------------
+
+Cisco IOS/IOS-XE:
+router bgp 65001
+ neighbor 10.1.1.1 remote-as 65002
+ !
+ address-family ipv4 unicast
+  neighbor 10.1.1.1 activate
+  network 192.0.2.0 mask 255.255.255.0
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  neighbor 10.1.1.1 activate
+  network 2001:db8::/32
+ exit-address-family
+
+Juniper Junos:
+protocols {
+    bgp {
+        group EXTERNAL {
+            type external;
+            peer-as 65002;
+            neighbor 10.1.1.1 {
+                family inet {
+                    unicast;
+                }
+                family inet6 {
+                    unicast;
+                }
+            }
+        }
+    }
+}
+
+9.3 BGP for MPLS VPNs
+---------------------
+Uses VPNv4/VPNv6 address family to exchange VPN routes.
+
+VPNv4 Route Format:
+- Route Distinguisher (RD): 64 bits (makes prefix unique)
+- IPv4 Prefix: 32 bits
+- Total: 96 bits
+
+Extended Communities:
+- Route Target (RT): Controls import/export
+- Site of Origin (SoO): Prevents routing loops
+
+Configuration (Cisco):
+router bgp 65001
+ address-family vpnv4
+  neighbor 10.1.1.1 activate
+  neighbor 10.1.1.1 send-community extended
+
+================================================================================
+10. BGP IN DATA CENTER
+================================================================================
+
+10.1 BGP for Data Center Fabrics
+---------------------------------
+Modern data centers increasingly use BGP instead of traditional protocols.
+
+Advantages in Data Center:
+✓ Simplicity (single protocol for underlay and overlay)
+✓ Scalability (proven at Internet scale)
+✓ Fast convergence (with BFD)
+✓ ECMP support (equal-cost multipath)
+✓ Vendor-neutral
+✓ Automation-friendly
+
+10.2 Spine-Leaf with BGP
+------------------------
+Typical design:
+- Each leaf peers with all spines (eBGP)
+- Different ASN per device or per tier
+- ECMP for load balancing
+
+ASN Numbering Strategies:
+
+Strategy 1: Unique ASN per Device
+- Spine 1: AS 65100
+- Spine 2: AS 65101
+- Leaf 1: AS 65200
+- Leaf 2: AS 65201
+
+Strategy 2: ASN per Tier
+- All Spines: AS 65100
+- All Leafs: AS 65200
+- Requires "allowas-in" or AS override
+
+Strategy 3: Private ASN with AS stripping
+- Remove private ASNs at edge
+
+Configuration Example (Leaf):
+router bgp 65201
+ neighbor 10.0.1.1 remote-as 65100  ! Spine 1
+ neighbor 10.0.1.2 remote-as 65101  ! Spine 2
+ maximum-paths 4
+ address-family ipv4
+  neighbor 10.0.1.1 activate
+  neighbor 10.0.1.2 activate
+
+10.3 BGP Unnumbered
+-------------------
+Uses IPv6 link-local addresses for BGP sessions.
+
+Benefits:
+- No need to assign IPv4 addresses to point-to-point links
+- Automatic neighbor discovery
+- Reduces IP address management
+
+Configuration (Cumulus Linux):
+auto swp1
+iface swp1
+  address 10.0.1.1/31
+
+router bgp 65201
+ neighbor swp1 interface remote-as external
+
+10.4 EVPN with BGP
+------------------
+BGP EVPN for VXLAN overlay networks.
+
+Address Family: L2VPN EVPN (AFI=25, SAFI=70)
+
+EVPN Route Types:
+- Type 2: MAC/IP Advertisement
+- Type 3: Inclusive Multicast
+- Type 5: IP Prefix
+
+Configuration (Cisco NX-OS):
+router bgp 65001
+ address-family l2vpn evpn
+  neighbor 10.1.1.1 activate
+  neighbor 10.1.1.1 send-community extended
+
+================================================================================
+11. BGP TROUBLESHOOTING
+================================================================================
+
+11.1 Common BGP Issues
+----------------------
+
+Issue: Neighbor stuck in ACTIVE state
+Symptoms: BGP neighbor shows Active, not Established
+Causes:
+- Routing issue (no route to neighbor)
+- ACL blocking TCP 179
+- Wrong remote-as configured
+- Firewall blocking
+
+Troubleshooting:
+# Check neighbor state
+show ip bgp summary
+
+# Test TCP connectivity
+telnet <neighbor-ip> 179
+
+# Check routing to neighbor
+show ip route <neighbor-ip>
+
+# Verify configuration
+show run | section bgp
+
+Issue: Routes received but not installed in routing table
+Causes:
+- Route rejected by inbound policy
+- Better path exists (lower AD or better metric)
+- Next-hop unreachable (iBGP issue)
+- Synchronization enabled (legacy)
+
+Troubleshooting:
+# Check BGP table
+show ip bgp
+
+# Check routing table
+show ip route
+
+# Check why route not installed
+show ip bgp <prefix> (look for ">" best path indicator)
+
+# Check next-hop reachability
+show ip route <next-hop>
+
+Issue: Routes not advertised to neighbors
+Causes:
+- Route not best path
+- Outbound policy filtering
+- iBGP split-horizon (route learned from iBGP not sent to iBGP)
+- Soft-reconfiguration not enabled
+
+Troubleshooting:
+# Check what's advertised
+show ip bgp neighbors <ip> advertised-routes
+
+# Check outbound policy
+show route-map <name>
+
+# Check filters
+show ip prefix-list
+
+Issue: BGP flapping
+Symptoms: Neighbor goes up/down repeatedly
+Causes:
+- Interface flapping
+- Hold timer expiration (too aggressive)
+- Resource exhaustion (CPU, memory)
+- Routing loops
+
+Troubleshooting:
+# Check neighbor history
+show ip bgp neighbors <ip>
+
+# Check interface status
+show interface <interface>
+
+# Check logs
+show logging | include BGP
+
+# Monitor in real-time
+debug ip bgp keepalives
+
+11.2 Verification Commands
+---------------------------
+
+Cisco IOS/IOS-XE:
+# BGP summary
+show ip bgp summary
+show ip bgp ipv6 unicast summary
+
+# BGP neighbors
+show ip bgp neighbors
+show ip bgp neighbors <ip> advertised-routes
+show ip bgp neighbors <ip> routes
+show ip bgp neighbors <ip> received-routes (requires soft-reconfiguration)
+
+# BGP table
+show ip bgp
+show ip bgp <prefix>
+show ip bgp regexp <as-path-regex>
+
+# BGP attributes
+show ip bgp <prefix> bestpath
+
+# BGP policy
+show route-map
+show ip prefix-list
+show ip as-path-access-list
+
+# BGP statistics
+show ip bgp statistics
+
+Cisco IOS-XR:
+show bgp summary
+show bgp neighbors
+show bgp <prefix>
+show bgp advertised neighbor <ip>
+
+Juniper Junos:
+show bgp summary
+show bgp neighbor
+show route protocol bgp
+show route advertising-protocol bgp <neighbor>
+show route receive-protocol bgp <neighbor>
+
+Arista EOS:
+show ip bgp summary
+show ip bgp neighbors
+show ip bgp detail
+
+11.3 Debug Commands (Use with Caution!)
+----------------------------------------
+
+Cisco:
+debug ip bgp updates (shows UPDATE messages)
+debug ip bgp keepalives
+debug ip bgp events
+
+Limiting debug output:
+access-list 1 permit host 10.1.1.1
+debug ip bgp updates 1
+
+Turn off debugging:
+no debug all
+undebug all
+
+================================================================================
+12. BGP BEST PRACTICES
+================================================================================
+
+12.1 Design Best Practices
+---------------------------
+☐ Use loopback interfaces for iBGP peering (stable)
+☐ Configure authentication (MD5 minimum)
+☐ Implement TTL security for eBGP (GTSM)
+☐ Use route reflectors or confederation for large iBGP
+☐ Deploy BFD for fast failure detection
+☐ Configure maximum-prefix limits on all neighbors
+☐ Use prefix lists for filtering (deny by default)
+☐ Document AS_PATH prepending and LOCAL_PREF policies
+☐ Maintain consistent router IDs (use loopback)
+
+12.2 Scalability Best Practices
+--------------------------------
+☐ Use route reflectors instead of full mesh
+☐ Implement hierarchical RR design for very large networks
+☐ Use peer templates for common configurations
+☐ Enable BGP dampening carefully (can harm convergence)
+☐ Implement prefix aggregation where possible
+☐ Filter unnecessary routes (full Internet table vs default only)
+☐ Monitor BGP table size and memory usage
+
+12.3 Security Best Practices
+-----------------------------
+☐ Implement MD5 authentication on all sessions
+☐ Filter bogons and martians
+☐ Implement maximum prefix limits
+☐ Use RPKI for route origin validation
+☐ Filter based on AS_PATH (allow only expected ASes)
+☐ Implement strict prefix filters (no /0 unless expected)
+☐ Use TTL security (GTSM) for eBGP
+☐ Log all BGP changes and anomalies
+☐ Implement rate limiting for route advertisements
+
+12.4 Operational Best Practices
+--------------------------------
+☐ Document all BGP policies and communities
+☐ Use descriptive neighbor descriptions
+☐ Monitor BGP session state (up/down alerts)
+☐ Implement graceful restart for maintenance
+☐ Use soft-reconfiguration for policy changes
+☐ Test policy changes in lab first
+☐ Maintain consistent configurations across devices
+☐ Use automation (Ansible, NAPALM) for configuration
+☐ Regular audits of routing policies
+
+12.5 High Availability Best Practices
+--------------------------------------
+☐ Deploy redundant route reflectors
+☐ Configure BFD for sub-second failure detection
+☐ Use BGP graceful restart
+☐ Implement fast external fallover
+☐ Plan for maintenance windows (graceful shutdown)
+☐ Test failover scenarios regularly
+☐ Monitor convergence times
+
+12.6 Filtering Best Practices
+------------------------------
+☐ Always filter in both directions (in and out)
+☐ Default deny, explicit permit
+☐ Filter based on prefix length (/24 max for IPv4, /48 for IPv6)
+☐ Filter RFC 1918, RFC 5735 (special use)
+☐ Filter your own prefixes inbound
+☐ Use AS_PATH filters for added security
+☐ Document all filters and their purpose
+
+================================================================================
+13. BGP ADVANCED FEATURES
+================================================================================
+
+13.1 BGP Conditional Advertisement
+-----------------------------------
+Advertise prefixes only if conditions are met.
+
+Use case: Advertise default route only if ISP link is up
+
+Configuration (Cisco):
+ip prefix-list ISP-LINK permit 0.0.0.0/0
+ip prefix-list DEFAULT permit 0.0.0.0/0
+
+route-map ADVERTISE-DEFAULT permit 10
+ match ip address prefix-list DEFAULT
+
+router bgp 65001
+ neighbor 10.1.1.1 advertise-map ADVERTISE-DEFAULT exist-map ISP-LINK
+
+13.2 BGP Graceful Restart
+--------------------------
+Allows BGP to maintain forwarding during control plane restart.
+
+Configuration (Cisco):
+router bgp 65001
+ bgp graceful-restart
+
+Benefits:
+- Reduces impact of planned maintenance
+- Maintains forwarding during software upgrades
+- Requires support from both peers
+
+13.3 BGP Dampening
+------------------
+Suppresses flapping routes to improve stability.
+
+Configuration (Cisco):
+router bgp 65001
+ bgp dampening 15 750 2000 60
+ ! half-life, reuse, suppress, max-suppress-time
+
+Warning: Use with extreme caution. Can cause reachability issues.
+Many networks do NOT enable dampening due to negative impacts.
+
+13.4 BGP Fast External Fallover
+--------------------------------
+Tears down eBGP session immediately when interface goes down.
+
+Configuration (Cisco):
+router bgp 65001
+ bgp fast-external-fallover
+
+Default: Enabled on most platforms
+
+13.5 Bidirectional Forwarding Detection (BFD)
+----------------------------------------------
+Provides sub-second failure detection for BGP.
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.1 fall-over bfd
+
+interface GigabitEthernet0/0
+ bfd interval 300 min_rx 300 multiplier 3
+
+Benefits:
+- Fast failure detection (milliseconds vs minutes)
+- Works for both eBGP and iBGP
+- Offloads liveness detection from BGP
+
+13.6 BGP Soft Reconfiguration
+------------------------------
+Stores received routes before policy applied.
+
+Configuration (Cisco):
+router bgp 65001
+ neighbor 10.1.1.1 soft-reconfiguration inbound
+
+Allows:
+- show ip bgp neighbors <ip> received-routes
+- Apply new inbound policy without resetting session
+
+Cost: Additional memory usage
+
+Alternative: Route Refresh (RFC 2918)
+- Requests peer to resend all routes
+- No memory overhead
+- Supported by most modern implementations
+
+================================================================================
+14. BGP CONFIGURATION EXAMPLES
+================================================================================
+
+14.1 Basic eBGP Configuration (Cisco)
+--------------------------------------
+router bgp 65001
+ bgp router-id 1.1.1.1
+ bgp log-neighbor-changes
+ neighbor 10.1.1.2 remote-as 65002
+ neighbor 10.1.1.2 description ISP-Connection
+ neighbor 10.1.1.2 password MySecurePassword
+ !
+ address-family ipv4
+  network 192.0.2.0 mask 255.255.255.0
+  neighbor 10.1.1.2 activate
+  neighbor 10.1.1.2 prefix-list INBOUND in
+  neighbor 10.1.1.2 prefix-list OUTBOUND out
+  neighbor 10.1.1.2 maximum-prefix 100 80
+ exit-address-family
+
+ip prefix-list OUTBOUND permit 192.0.2.0/24
+ip prefix-list INBOUND permit 0.0.0.0/0 le 24
+
+14.2 iBGP with Route Reflector (Cisco)
+---------------------------------------
+! Route Reflector Configuration
+router bgp 65001
+ bgp router-id 1.1.1.1
+ bgp cluster-id 1.1.1.1
+ neighbor RR-CLIENTS peer-group
+ neighbor RR-CLIENTS remote-as 65001
+ neighbor RR-CLIENTS update-source Loopback0
+ neighbor RR-CLIENTS route-reflector-client
+ neighbor 2.2.2.2 peer-group RR-CLIENTS
+ neighbor 3.3.3.3 peer-group RR-CLIENTS
+
+! Client Configuration
+router bgp 65001
+ bgp router-id 2.2.2.2
+ neighbor 1.1.1.1 remote-as 65001
+ neighbor 1.1.1.1 update-source Loopback0
+ neighbor 1.1.1.1 next-hop-self
+
+14.3 eBGP with IPv6 (Cisco)
+----------------------------
+router bgp 65001
+ bgp router-id 1.1.1.1
+ neighbor 2001:db8::2 remote-as 65002
+ !
+ address-family ipv6
+  network 2001:db8:1::/48
+  neighbor 2001:db8::2 activate
+ exit-address-family
+
+14.4 BGP with MPLS VPN (Cisco)
+-------------------------------
+! PE Router Configuration
+ip vrf CUSTOMER-A
+ rd 65001:100
+ route-target export 65001:100
+ route-target import 65001:100
+
+router bgp 65001
+ neighbor 10.1.1.2 remote-as 65001
+ neighbor 10.1.1.2 update-source Loopback0
+ !
+ address-family vpnv4
+  neighbor 10.1.1.2 activate
+  neighbor 10.1.1.2 send-community extended
+ exit-address-family
+ !
+ address-family ipv4 vrf CUSTOMER-A
+  neighbor 192.168.1.1 remote-as 65100
+  neighbor 192.168.1.1 activate
+ exit-address-family
+
+14.5 BGP on Juniper Junos
+--------------------------
+protocols {
+    bgp {
+        group EXTERNAL {
+            type external;
+            peer-as 65002;
+            neighbor 10.1.1.2 {
+                description "ISP Connection";
+                authentication-key "MySecurePassword";
+                import INBOUND;
+                export OUTBOUND;
+                family inet {
+                    unicast {
+                        prefix-limit {
+                            maximum 100;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+policy-options {
+    prefix-list MY-NETWORKS {
+        192.0.2.0/24;
+    }
+    policy-statement OUTBOUND {
+        term ADVERTISE {
+            from {
+                prefix-list MY-NETWORKS;
+            }
+            then accept;
+        }
+        term DENY {
+            then reject;
+        }
+    }
+}
+
+routing-options {
+    router-id 1.1.1.1;
+    autonomous-system 65001;
+}
+
+14.6 BGP on Arista EOS
+-----------------------
+router bgp 65001
+   router-id 1.1.1.1
+   maximum-paths 4
+   neighbor 10.1.1.2 remote-as 65002
+   neighbor 10.1.1.2 description ISP-Connection
+   neighbor 10.1.1.2 password 7 <encrypted-password>
+   neighbor 10.1.1.2 maximum-routes 100 warning-limit 80
+   network 192.0.2.0/24
+   !
+   address-family ipv4
+      neighbor 10.1.1.2 prefix-list INBOUND in
+      neighbor 10.1.1.2 prefix-list OUTBOUND out
+
+ip prefix-list OUTBOUND
+   seq 10 permit 192.0.2.0/24
+
+ip prefix-list INBOUND
+   seq 10 permit 0.0.0.0/0 le 24
+
+14.7 BGP with FRRouting (Linux)
+--------------------------------
+# /etc/frr/frr.conf
+frr version 8.0
+frr defaults traditional
+!
+router bgp 65001
+ bgp router-id 1.1.1.1
+ neighbor 10.1.1.2 remote-as 65002
+ neighbor 10.1.1.2 description ISP-Connection
+ neighbor 10.1.1.2 password MySecurePassword
+ !
+ address-family ipv4 unicast
+  network 192.0.2.0/24
+  neighbor 10.1.1.2 prefix-list INBOUND in
+  neighbor 10.1.1.2 prefix-list OUTBOUND out
+  neighbor 10.1.1.2 maximum-prefix 100
+ exit-address-family
+!
+ip prefix-list OUTBOUND seq 5 permit 192.0.2.0/24
+ip prefix-list INBOUND seq 5 permit 0.0.0.0/0 le 24
+!
+
+================================================================================
+REFERENCES AND DOCUMENTATION
+================================================================================
+
+1. Core BGP Specifications
+   - RFC 4271: A Border Gateway Protocol 4 (BGP-4) (2006)
+   - RFC 4274: BGP-4 Protocol Analysis (2006)
+   - RFC 4275: BGP-4 MIB Implementation Survey (2006)
+   - RFC 1772: Application of the Border Gateway Protocol (Historical)
+
+2. BGP Extensions and Enhancements
+   - RFC 2385: Protection of BGP Sessions via TCP MD5 Signature (1998)
+   - RFC 2439: BGP Route Flap Damping (1998)
+   - RFC 2918: Route Refresh Capability for BGP-4 (2000)
+   - RFC 4760: Multiprotocol Extensions for BGP-4 (MP-BGP) (2007)
+   - RFC 5082: Generalized TTL Security Mechanism (GTSM) (2007)
+   - RFC 5492: Capabilities Advertisement with BGP-4 (2009)
+   - RFC 6793: BGP Support for Four-Octet AS Number Space (2012)
+   - RFC 7911: Advertisement of Multiple Paths in BGP (ADD-PATH) (2016)
+   - RFC 8092: BGP Large Communities (2017)
+
+3. BGP Communities
+   - RFC 1997: BGP Communities Attribute (1996)
+   - RFC 4360: BGP Extended Communities Attribute (2006)
+   - RFC 8092: BGP Large Communities Attribute (2017)
+
+4. BGP Route Reflectors and Confederations
+   - RFC 4456: BGP Route Reflection (2006)
+   - RFC 5065: Autonomous System Confederations for BGP (2007)
+
+5. BGP Security
+   - RFC 6480: An Infrastructure to Support RPKI (2012)
+   - RFC 6811: BGP Prefix Origin Validation (2013)
+   - RFC 7454: BGP Operations and Security (2015)
+   - RFC 8205: BGPsec Protocol Specification (2017)
+   - RFC 8374: BGPsec Design Choices and Summary of Supporting Discussions
+
+6. BGP for MPLS VPNs
+   - RFC 4364: BGP/MPLS IP Virtual Private Networks (VPNs) (2006)
+   - RFC 4659: BGP-MPLS IP VPN Extension for IPv6 VPN (2006)
+   - RFC 4684: Constrained Route Distribution for BGP/MPLS IP VPNs (2006)
+
+7. BGP for EVPN
+   - RFC 7432: BGP MPLS-Based Ethernet VPN (2015)
+   - RFC 8365: A Network Virtualization Overlay Solution Using EVPN (2018)
+   - RFC 9135: Integrated Routing and Bridging in EVPN (2021)
+
+8. Books
+   - "Internet Routing Architectures" by Sam Halabi and Danny McPherson
+     (Cisco Press, 2nd Edition, 2000)
+   - "BGP Design and Implementation" by Randy Zhang and Micah Bartell
+     (Cisco Press, 2003)
+   - "Troubleshooting BGP: A Practical Guide to Understanding and
+     Troubleshooting BGP" by Vinit Jain and Brad Edgeworth (Cisco Press, 2016)
+   - "BGP in the Data Center" by Dinesh Dutt (O'Reilly, 2017)
+
+9. Vendor Documentation
+   - Cisco BGP Configuration Guide
+     https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/iproute_bgp/
+   - Juniper BGP Configuration Guide
+     https://www.juniper.net/documentation/us/en/software/junos/bgp/
+   - Arista BGP Configuration Guide
+     https://www.arista.com/en/um-eos/eos-border-gateway-protocol-bgp
+   - FRRouting BGP Documentation
+     https://docs.frrouting.org/en/latest/bgp.html
+
+10. Industry Resources
+    - IETF IDR (Inter-Domain Routing) Working Group
+      https://datatracker.ietf.org/wg/idr/
+    - NANOG (North American Network Operators' Group)
+      https://www.nanog.org/
+    - RIPE NCC BGP Resources
+      https://www.ripe.net/manage-ips-and-asns/bgp
+    - Hurricane Electric BGP Toolkit
+      https://bgp.he.net/
+
+11. BGP Looking Glasses and Route Servers
+    - Route Views Project: http://www.routeviews.org/
+    - RIPE RIS: https://www.ripe.net/analyse/internet-measurements/routing-
+      information-service-ris
+    - Hurricane Electric Looking Glass: https://lg.he.net/
+
+12. Training and Certification
+    - Cisco CCNP Enterprise (BGP fundamentals)
+    - Cisco CCIE Enterprise Infrastructure (Advanced BGP)
+    - Juniper JNCIS-SP and JNCIE-SP (BGP focus)
+    - BGP Expert: Advanced BGP training courses
+
+================================================================================
+BGP DEPLOYMENT CHECKLIST
+================================================================================
+
+☐ Planning Phase
+  ☐ Obtain ASN from RIR (if needed)
+  ☐ Plan IP address space (public prefixes)
+  ☐ Document BGP topology (iBGP, eBGP sessions)
+  ☐ Plan route reflector hierarchy (if needed)
+  ☐ Define routing policies (LOCAL_PREF, communities)
+  ☐ Plan prefix aggregation strategy
+  ☐ Document maximum prefix limits per peer
+
+☐ Configuration Phase
+  ☐ Configure unique router IDs (use loopbacks)
+  ☐ Configure iBGP sessions (full mesh or RR)
+  ☐ Configure eBGP sessions to external peers
+  ☐ Enable MD5 authentication on all sessions
+  ☐ Configure BFD for fast failure detection
+  ☐ Set maximum prefix limits
+  ☐ Configure prefix filtering (inbound and outbound)
+  ☐ Implement AS_PATH filtering where appropriate
+
+☐ Policy Implementation
+  ☐ Configure inbound prefix lists (deny bogons)
+  ☐ Configure outbound prefix lists (advertise only your prefixes)
+  ☐ Set LOCAL_PREF for preferred paths
+  ☐ Configure MED if influencing inbound traffic
+  ☐ Implement community tagging strategy
+  ☐ Configure route maps for policy application
+  ☐ Test policy in lab before production
+
+☐ Security
+  ☐ Enable MD5 authentication
+  ☐ Implement TTL security (GTSM) for eBGP
+  ☐ Filter martians and bogons
+  ☐ Set maximum prefix limits (with warning threshold)
+  ☐ Deploy RPKI (if supported)
+  ☐ Implement strict prefix filtering
+  ☐ Log all BGP events
+  ☐ Monitor for anomalies (hijacking, leaks)
+
+☐ High Availability
+  ☐ Deploy redundant route reflectors
+  ☐ Configure graceful restart
+  ☐ Enable BFD for sub-second detection
+  ☐ Test failover scenarios
+  ☐ Document maintenance procedures
+  ☐ Plan for graceful shutdown during maintenance
+
+☐ Testing and Validation
+  ☐ Verify all sessions reach ESTABLISHED state
+  ☐ Confirm routes received from peers
+  ☐ Validate routes advertised to peers
+  ☐ Test prefix filtering (ensure only expected routes)
+  ☐ Verify best path selection working correctly
+  ☐ Test failover scenarios
+  ☐ Validate convergence times
+  ☐ Perform route injection testing (simulate failures)
+
+☐ Monitoring and Operations
+  ☐ Set up monitoring for session state
+  ☐ Monitor route table size
+  ☐ Track prefix count per neighbor
+  ☐ Alert on session flapping
+  ☐ Monitor BGP attributes (unexpected changes)
+  ☐ Log all policy changes
+  ☐ Regular audits of routing policies
+  ☐ Document all BGP communities and their meaning
+
+☐ Documentation
+  ☐ AS path policy documentation
+  ☐ Community definitions and usage
+  ☐ Prefix lists and their purposes
+  ☐ Neighbor relationships and descriptions
+  ☐ Route reflector topology
+  ☐ Escalation procedures for BGP issues
+  ☐ Maintenance procedures
+
+================================================================================
+END OF DOCUMENT
+================================================================================

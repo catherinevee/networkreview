@@ -1,0 +1,1040 @@
+Cisco NX-OS CLI Commands for Layer 2 and Layer 3 Configuration
+=================================================================
+
+This document provides common Cisco NX-OS CLI commands for configuring Layer 2 and Layer 3 functionality on Cisco Nexus switches (Nexus 9000, 7000, 5000, 3000 series).
+
+Basic CLI Navigation
+--------------------
+
+# Enter configuration mode
+configure terminal
+config t
+
+# Exit configuration mode
+exit
+end
+
+# Show running configuration
+show running-config
+
+# Show startup configuration
+show startup-config
+
+# Save configuration (NX-OS auto-saves to startup by default)
+copy running-config startup-config
+
+# Show command history
+show cli history
+
+# Enable command completion
+terminal length 0   # Disable page breaks
+terminal width 511  # Set terminal width
+
+# Show configuration differences
+show running-config diff
+
+Layer 2 Configuration
+---------------------
+
+### Feature Enablement (NX-OS Specific)
+
+# NX-OS requires enabling features before use
+feature interface-vlan
+feature lacp
+feature vpc
+feature lldp
+feature telnet
+feature ssh
+
+# Show enabled features
+show feature
+
+### VLAN Configuration
+
+# Create VLAN
+vlan 100
+  name ENGINEERING-DEPT
+  state active
+
+# Create multiple VLANs
+vlan 200
+  name SALES-DEPT
+vlan 300
+  name GUEST-NETWORK
+
+# Create VLAN range
+vlan 400-410
+  name DATA-VLANS
+
+# Delete VLAN
+no vlan 410
+
+# Show VLAN information
+show vlan
+show vlan brief
+show vlan id 100
+
+### Interface Configuration (Access Mode)
+
+# Configure interface as Layer 2 access port
+interface Ethernet1/1
+  description Access Port to Server
+  switchport mode access
+  switchport access vlan 100
+  spanning-tree port type edge
+  spanning-tree bpduguard enable
+  no shutdown
+
+# Configure interface range
+interface range Ethernet1/1-10
+  switchport mode access
+  switchport access vlan 100
+  spanning-tree port type edge
+  no shutdown
+
+# Show interface status
+show interface Ethernet1/1
+show interface status
+show interface brief
+
+### Interface Configuration (Trunk Mode)
+
+# Configure trunk port
+interface Ethernet1/20
+  description Trunk to Distribution Switch
+  switchport mode trunk
+  switchport trunk allowed vlan 1,100,200,300
+  switchport trunk native vlan 1
+  spanning-tree port type network
+  no shutdown
+
+# Add VLANs to trunk
+interface Ethernet1/20
+  switchport trunk allowed vlan add 400-410
+
+# Remove VLANs from trunk
+interface Ethernet1/20
+  switchport trunk allowed vlan remove 410
+
+# Allow all VLANs
+interface Ethernet1/20
+  switchport trunk allowed vlan all
+
+# Show trunk interfaces
+show interface trunk
+
+### Port-Channel (EtherChannel/LAG) Configuration
+
+# Configure port-channel with LACP
+interface port-channel10
+  description Port-Channel to Core Switch
+  switchport mode trunk
+  switchport trunk allowed vlan all
+  vpc 10
+
+# Add member interfaces to port-channel
+interface Ethernet1/21-22
+  description Member of port-channel10
+  channel-group 10 mode active
+  no shutdown
+
+# Configure port-channel load balancing
+port-channel load-balance src-dst ip-l4port
+
+# Show port-channel information
+show port-channel summary
+show port-channel 10
+show lacp neighbor
+
+### vPC (Virtual Port Channel) Configuration
+
+# Enable vPC feature
+feature vpc
+
+# Configure vPC domain
+vpc domain 1
+  role priority 100
+  peer-keepalive destination 10.0.0.2 source 10.0.0.1 vrf management
+  peer-gateway
+  auto-recovery
+  ip arp synchronize
+
+# Configure peer-link (critical for vPC)
+interface port-channel1
+  description vPC Peer Link
+  switchport mode trunk
+  switchport trunk allowed vlan all
+  spanning-tree port type network
+  vpc peer-link
+
+interface Ethernet1/1-2
+  description vPC Peer Link Member
+  channel-group 1 mode active
+  no shutdown
+
+# Configure vPC member port
+interface port-channel10
+  vpc 10
+
+# Show vPC status
+show vpc
+show vpc brief
+show vpc role
+show vpc consistency-parameters global
+show vpc peer-keepalive
+
+### Spanning Tree Protocol Configuration
+
+# Configure spanning tree mode
+spanning-tree mode rapid-pvst
+# or
+spanning-tree mode mst
+
+# Configure bridge priority
+spanning-tree vlan 100 priority 4096
+
+# Set as root bridge
+spanning-tree vlan 100 root primary
+
+# Set as secondary root
+spanning-tree vlan 100 root secondary
+
+# Configure port type
+interface Ethernet1/1
+  spanning-tree port type edge        # Access port (portfast)
+
+interface Ethernet1/20
+  spanning-tree port type network     # Trunk port
+
+# Enable BPDU Guard
+interface Ethernet1/1
+  spanning-tree bpduguard enable
+
+# Enable BPDU Filter
+interface Ethernet1/1
+  spanning-tree bpdufilter enable
+
+# Enable Root Guard
+interface Ethernet1/20
+  spanning-tree guard root
+
+# Enable Loop Guard
+spanning-tree loopguard default
+
+# Show spanning tree
+show spanning-tree
+show spanning-tree vlan 100
+show spanning-tree summary
+
+### Multiple Spanning Tree (MST) Configuration
+
+# Configure MST
+spanning-tree mode mst
+
+spanning-tree mst configuration
+  name REGION1
+  revision 1
+  instance 1 vlan 1-500
+  instance 2 vlan 501-1000
+
+# Configure MST instance priority
+spanning-tree mst 1 priority 4096
+
+# Show MST configuration
+show spanning-tree mst configuration
+show spanning-tree mst
+
+### MAC Address Table Configuration
+
+# Show MAC address table
+show mac address-table
+show mac address-table vlan 100
+show mac address-table interface Ethernet1/1
+
+# Configure static MAC address
+mac address-table static 0011.2233.4455 vlan 100 interface Ethernet1/1
+
+# Configure MAC aging time
+mac address-table aging-time 600
+
+# Clear MAC address table
+clear mac address-table dynamic
+
+### Private VLANs
+
+# Enable private VLAN feature
+feature private-vlan
+
+# Configure primary VLAN
+vlan 500
+  private-vlan primary
+  private-vlan association 501,502
+
+# Configure isolated VLAN
+vlan 501
+  private-vlan isolated
+
+# Configure community VLAN
+vlan 502
+  private-vlan community
+
+# Configure promiscuous port
+interface Ethernet1/30
+  switchport mode private-vlan promiscuous
+  switchport private-vlan mapping 500 501,502
+
+# Configure host port (isolated)
+interface Ethernet1/31
+  switchport mode private-vlan host
+  switchport private-vlan host-association 500 501
+
+# Show private VLAN
+show vlan private-vlan
+
+### FabricPath (Layer 2 Multipathing)
+
+# Enable FabricPath
+feature fabricpath
+
+# Configure FabricPath VLAN
+vlan 100
+  mode fabricpath
+
+# Configure FabricPath interface
+interface Ethernet1/40
+  switchport mode fabricpath
+  no shutdown
+
+# Show FabricPath
+show fabricpath route
+show fabricpath isis adjacency
+
+### Storm Control
+
+# Configure broadcast storm control
+interface Ethernet1/1
+  storm-control broadcast level 80
+
+# Configure multicast storm control
+interface Ethernet1/1
+  storm-control multicast level 80
+
+# Configure unicast storm control
+interface Ethernet1/1
+  storm-control unicast level 80
+
+# Show storm control
+show interface storm-control
+
+### Port Security
+
+# Configure port security
+interface Ethernet1/1
+  switchport port-security
+  switchport port-security maximum 2
+  switchport port-security violation shutdown
+  switchport port-security mac-address sticky
+
+# Configure specific MAC address
+interface Ethernet1/1
+  switchport port-security mac-address 0011.2233.4455
+
+# Show port security
+show port-security
+show port-security interface Ethernet1/1
+show port-security address
+
+Layer 3 Configuration
+---------------------
+
+### Enable IP Routing
+
+# Enable Layer 3 functionality
+feature interface-vlan
+
+# Enable routing (enabled by default on most Nexus)
+ip routing
+ipv6 unicast-routing
+
+### Layer 3 Interface Configuration (Routed Port)
+
+# Configure physical interface as Layer 3
+interface Ethernet1/10
+  description Layer 3 Interface to Router
+  no switchport
+  ip address 192.168.1.1/24
+  ipv6 address 2001:db8::1/64
+  no shutdown
+
+# Configure secondary IP address
+interface Ethernet1/10
+  ip address 192.168.1.2/24 secondary
+
+# Configure MTU
+interface Ethernet1/10
+  mtu 9216
+
+# Show interface
+show interface Ethernet1/10
+show ip interface brief
+show ipv6 interface brief
+
+### SVI (Switched Virtual Interface) Configuration
+
+# Create SVI for VLAN
+interface Vlan100
+  description Gateway for VLAN 100
+  ip address 10.100.0.1/24
+  ipv6 address 2001:db8:100::1/64
+  no shutdown
+
+# Configure VLAN interface with HSRP (see HSRP section)
+interface Vlan100
+  ip address 10.100.0.2/24
+  no shutdown
+
+# Show SVI
+show interface vlan 100
+
+### Loopback Interface Configuration
+
+# Create loopback interface
+interface loopback0
+  description Router ID and Management
+  ip address 1.1.1.1/32
+  ipv6 address 2001:db8:ffff::1/128
+
+# Show loopback
+show interface loopback0
+
+### Static Routes
+
+# Configure IPv4 static route
+ip route 0.0.0.0/0 192.168.1.254
+ip route 10.0.0.0/8 192.168.1.253
+
+# Configure static route with administrative distance
+ip route 172.16.0.0/12 192.168.1.252 preference 5
+
+# Configure IPv6 static route
+ipv6 route ::/0 2001:db8::254
+
+# Track static route with object tracking
+track 1 interface Ethernet1/10 line-protocol
+ip route 0.0.0.0/0 192.168.1.254 track 1
+
+# Show routing table
+show ip route
+show ip route static
+show ipv6 route
+
+### VRF (Virtual Routing and Forwarding)
+
+# Create VRF
+vrf context CUSTOMER-A
+  description Customer A VRF
+  rd 65000:100
+  address-family ipv4 unicast
+    route-target import 65000:100
+    route-target export 65000:100
+  address-family ipv6 unicast
+    route-target import 65000:100
+    route-target export 65000:100
+
+# Assign interface to VRF
+interface Ethernet1/15
+  vrf member CUSTOMER-A
+  ip address 172.16.1.1/24
+  no shutdown
+
+# Configure static route in VRF
+ip route 0.0.0.0/0 172.16.1.254 vrf CUSTOMER-A
+
+# Show VRF
+show vrf
+show vrf CUSTOMER-A
+show ip route vrf CUSTOMER-A
+
+# Ping from VRF
+ping 172.16.1.254 vrf CUSTOMER-A
+
+### Dynamic Routing - OSPF
+
+# Enable OSPF feature
+feature ospf
+
+# Configure OSPF
+router ospf 1
+  router-id 1.1.1.1
+
+# Configure OSPF on interface
+interface Ethernet1/10
+  ip router ospf 1 area 0.0.0.0
+
+interface Vlan100
+  ip router ospf 1 area 0.0.0.0
+  ip ospf passive-interface
+
+# Configure OSPF authentication
+interface Ethernet1/10
+  ip ospf authentication message-digest
+  ip ospf message-digest-key 1 md5 secretkey
+
+# Configure OSPF network type
+interface Ethernet1/10
+  ip ospf network point-to-point
+
+# Configure OSPF cost
+interface Ethernet1/10
+  ip ospf cost 100
+
+# Redistribute connected routes
+router ospf 1
+  redistribute direct route-map CONNECTED-ROUTES
+
+# Show OSPF
+show ip ospf
+show ip ospf neighbors
+show ip ospf interface
+show ip ospf database
+
+### Dynamic Routing - EIGRP
+
+# Enable EIGRP feature
+feature eigrp
+
+# Configure EIGRP
+router eigrp 100
+  router-id 1.1.1.1
+
+# Configure EIGRP on interface
+interface Ethernet1/10
+  ip router eigrp 100
+
+interface Vlan100
+  ip router eigrp 100
+  ip passive-interface eigrp 100
+
+# Configure EIGRP authentication
+interface Ethernet1/10
+  ip authentication mode eigrp 100 md5
+  ip authentication key-chain eigrp 100 EIGRP-KEYS
+
+key chain EIGRP-KEYS
+  key 1
+    key-string secretkey
+
+# Show EIGRP
+show ip eigrp neighbors
+show ip eigrp topology
+show ip eigrp interfaces
+
+### Dynamic Routing - BGP
+
+# Enable BGP feature
+feature bgp
+
+# Configure BGP
+router bgp 65000
+  router-id 1.1.1.1
+  address-family ipv4 unicast
+    network 10.0.0.0/8
+  address-family ipv6 unicast
+
+# Configure eBGP neighbor
+neighbor 192.168.1.254 remote-as 65001
+  description eBGP to ISP
+  address-family ipv4 unicast
+
+# Configure BGP authentication
+neighbor 192.168.1.254 remote-as 65001
+  password 0 secretkey
+
+# Configure iBGP neighbor
+neighbor 10.1.1.2 remote-as 65000
+  description iBGP to Core Router
+  update-source loopback0
+  address-family ipv4 unicast
+    next-hop-self
+
+# Configure route reflector
+neighbor 10.1.1.3 remote-as 65000
+  address-family ipv4 unicast
+    route-reflector-client
+
+# Configure BGP in VRF
+vrf context CUSTOMER-A
+  address-family ipv4 unicast
+
+router bgp 65000
+  vrf CUSTOMER-A
+    address-family ipv4 unicast
+    neighbor 172.16.1.254 remote-as 65001
+
+# Show BGP
+show ip bgp summary
+show ip bgp neighbors
+show ip bgp
+
+### HSRP (Hot Standby Router Protocol)
+
+# Enable HSRP feature
+feature hsrp
+
+# Configure HSRP on interface
+interface Vlan100
+  ip address 10.100.0.2/24
+  hsrp 1
+    ip 10.100.0.1
+    priority 150
+    preempt
+    authentication md5 key-string secretkey
+
+# Show HSRP
+show hsrp
+show hsrp brief
+show hsrp interface vlan 100
+
+### VRRP (Virtual Router Redundancy Protocol)
+
+# Enable VRRP feature
+feature vrrp
+
+# Configure VRRP on interface
+interface Vlan100
+  ip address 10.100.0.2/24
+  vrrp 1
+    address 10.100.0.1
+    priority 150
+    authentication text secretkey
+
+# Show VRRP
+show vrrp
+show vrrp interface vlan 100
+
+### Policy-Based Routing (PBR)
+
+# Configure route-map for PBR
+route-map PBR-MAP permit 10
+  match ip address ACL-PBR
+  set ip next-hop 192.168.1.253
+
+# Create ACL for PBR
+ip access-list ACL-PBR
+  10 permit ip 10.100.0.0/24 any
+
+# Apply PBR to interface
+interface Vlan100
+  ip policy route-map PBR-MAP
+
+# Show PBR
+show route-map PBR-MAP
+show ip policy
+
+### Access Control Lists (ACLs)
+
+# Configure IP ACL
+ip access-list ACL-PERMIT-SSH
+  10 permit tcp 192.168.1.0/24 any eq 22
+  20 deny ip any any log
+
+# Configure extended IP ACL
+ip access-list ACL-FIREWALL
+  10 permit icmp any any
+  20 permit tcp 192.168.1.0/24 any eq 80
+  30 permit tcp 192.168.1.0/24 any eq 443
+  40 deny ip any any log
+
+# Apply ACL to interface
+interface Ethernet1/10
+  ip access-group ACL-FIREWALL in
+
+# Apply ACL to VLAN interface
+interface Vlan100
+  ip access-group ACL-FIREWALL out
+
+# Configure IPv6 ACL
+ipv6 access-list ACL-V6-PERMIT
+  permit ipv6 2001:db8::/32 any
+  deny ipv6 any any log
+
+# Show ACL
+show ip access-lists ACL-FIREWALL
+show ip interface Ethernet1/10
+
+### DHCP Configuration
+
+# Enable DHCP feature
+feature dhcp
+
+# Configure DHCP relay
+interface Vlan100
+  ip dhcp relay address 10.0.0.50
+
+# Show DHCP relay
+show ip dhcp relay
+
+### Quality of Service (QoS)
+
+# Configure class-map
+class-map type qos match-all CLASS-VOICE
+  match dscp ef
+
+class-map type qos match-all CLASS-VIDEO
+  match dscp af41
+
+# Configure policy-map
+policy-map type qos POLICY-QOS
+  class CLASS-VOICE
+    set qos-group 1
+    police cir 10 mbps bc 200 ms
+  class CLASS-VIDEO
+    set qos-group 2
+    police cir 50 mbps bc 200 ms
+  class class-default
+    set qos-group 0
+
+# Apply QoS policy to interface
+interface Ethernet1/10
+  service-policy type qos input POLICY-QOS
+
+# Configure queuing
+policy-map type queuing POLICY-QUEUING
+  class type queuing c-out-q1
+    priority level 1
+    bandwidth percent 30
+  class type queuing c-out-q2
+    bandwidth percent 40
+
+# Show QoS
+show policy-map interface Ethernet1/10
+show queuing interface Ethernet1/10
+
+### Multicast Configuration
+
+# Enable multicast features
+feature pim
+
+# Configure PIM on interfaces
+interface Ethernet1/10
+  ip pim sparse-mode
+
+interface Vlan100
+  ip pim sparse-mode
+
+# Configure RP (Rendezvous Point)
+ip pim rp-address 10.1.1.1
+
+# Configure IGMP
+interface Vlan100
+  ip igmp version 3
+
+# Show multicast
+show ip pim neighbor
+show ip pim interface
+show ip igmp groups
+show ip mroute
+
+### VXLAN (Virtual Extensible LAN)
+
+# Enable VXLAN features
+feature vn-segment-vlan-based
+feature nv overlay
+
+# Configure NVE interface
+interface nve1
+  no shutdown
+  source-interface loopback0
+  member vni 10100
+    ingress-replication protocol bgp
+
+# Map VLAN to VNI
+vlan 100
+  vn-segment 10100
+
+# Configure EVPN
+router bgp 65000
+  neighbor 10.1.1.2 remote-as 65000
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      route-reflector-client
+
+# Show VXLAN
+show nve peers
+show nve vni
+show bgp l2vpn evpn summary
+
+Verification and Troubleshooting Commands
+------------------------------------------
+
+### Layer 2 Verification
+
+# Show VLAN information
+show vlan
+show vlan brief
+show vlan id 100
+
+# Show interface status
+show interface status
+show interface brief
+show interface Ethernet1/1
+
+# Show MAC address table
+show mac address-table
+show mac address-table dynamic
+
+# Show port-channel
+show port-channel summary
+show port-channel 10 detail
+
+# Show vPC
+show vpc
+show vpc brief
+show vpc consistency-parameters
+
+# Show spanning tree
+show spanning-tree
+show spanning-tree summary
+
+### Layer 3 Verification
+
+# Show interface information
+show ip interface brief
+show ipv6 interface brief
+show interface Ethernet1/10
+
+# Show routing table
+show ip route
+show ip route summary
+show ipv6 route
+
+# Show ARP table
+show ip arp
+show ip arp vrf CUSTOMER-A
+
+# Show IPv6 neighbors
+show ipv6 neighbors
+
+# Test connectivity
+ping 8.8.8.8
+ping 8.8.8.8 source 192.168.1.1 count 100
+
+traceroute 8.8.8.8
+
+# Show routing protocols
+show ip ospf neighbors
+show ip eigrp neighbors
+show ip bgp summary
+
+# Show HSRP/VRRP
+show hsrp brief
+show vrrp brief
+
+### System Information
+
+# Show version
+show version
+show module
+
+# Show inventory
+show inventory
+
+# Show system resources
+show system resources
+show processes cpu sort
+show processes memory
+
+# Show environment
+show environment temperature
+show environment power
+show environment fan
+
+# Show logging
+show logging logfile
+show logging | include ERROR
+
+### Debugging (Use with Caution)
+
+# Debug commands
+debug spanning-tree events
+debug ip ospf events
+debug ip bgp updates
+
+# Disable all debugging
+no debug all
+undebug all
+
+# Show debugging status
+show debug
+
+### Configuration Management
+
+# Show running configuration
+show running-config
+show running-config interface Ethernet1/1
+
+# Show startup configuration
+show startup-config
+
+# Save configuration
+copy running-config startup-config
+
+# Backup configuration to bootflash
+copy running-config bootflash:backup-config.cfg
+
+# Copy configuration to remote server
+copy running-config scp://user@10.0.0.100/backup-config.cfg
+
+# Checkpoint configuration
+checkpoint CHECKPOINT-1
+# Rollback to checkpoint
+rollback running-config checkpoint CHECKPOINT-1
+
+# Show checkpoint
+show checkpoint summary
+
+### Software Management
+
+# Show boot variables
+show boot
+
+# Set boot image
+boot nxos bootflash:nxos.9.3.10.bin
+
+# Install/upgrade software
+install all nxos bootflash:nxos.9.3.10.bin
+
+# Show install status
+show install all status
+
+Documentation References
+------------------------
+
+[1] Cisco Systems. (2024). Cisco Nexus 9000 Series NX-OS Configuration Guide.
+    https://www.cisco.com/c/en/us/support/switches/nexus-9000-series-switches/products-installation-and-configuration-guides-list.html
+    Official configuration guide for Nexus 9000 series.
+
+[2] Cisco Systems. (2024). Cisco NX-OS Command Reference.
+    https://www.cisco.com/c/en/us/support/switches/nexus-9000-series-switches/products-command-reference-list.html
+    Complete command reference for NX-OS.
+
+[3] Cisco Systems. (2024). Cisco Nexus 9000 Series NX-OS Layer 2 Switching Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/layer2/
+    Layer 2 switching configuration.
+
+[4] Cisco Systems. (2024). Cisco Nexus 9000 Series NX-OS Unicast Routing Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/unicast/
+    Layer 3 routing configuration.
+
+[5] Cisco Systems. (2024). Cisco Nexus 9000 Series NX-OS vPC Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/vpc/
+    Virtual Port Channel configuration.
+
+[6] Cisco Systems. (2024). Cisco Nexus 9000 Series NX-OS VXLAN Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/vxlan/
+    VXLAN and EVPN configuration.
+
+[7] Cisco Systems. (2024). Cisco Nexus 9000 Series NX-OS High Availability Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/high-availability/
+    HA features including vPC, HSRP, VRRP.
+
+[8] Cisco Systems. (2024). Cisco Nexus 9000 Series NX-OS Quality of Service Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/qos/
+    QoS configuration and traffic management.
+
+[9] Tiso, R. (2013). Data Center Unified Fabric with Cisco Nexus.
+    Cisco Press. ISBN: 978-1587143281
+    Comprehensive guide to Nexus data center switching.
+
+[10] Cisco Systems. (2024). Cisco NX-OS Troubleshooting Guide.
+     https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/troubleshooting/
+     Troubleshooting common issues.
+
+[11] Cisco DCNM (Data Center Network Manager) Documentation.
+     https://www.cisco.com/c/en/us/support/cloud-systems-management/prime-data-center-network-manager/
+     Centralized management for NX-OS switches.
+
+[12] Cisco Learning Network.
+     https://learningnetwork.cisco.com/s/topic/0TO3i0000008jYHGAY/data-center
+     Community resources for data center technologies.
+
+Key NX-OS Concepts
+------------------
+
+1. **Feature-Based Architecture:**
+   - Features must be enabled before use: feature <name>
+   - Reduces memory footprint by loading only needed features
+   - Features: interface-vlan, lacp, vpc, ospf, bgp, etc.
+
+2. **Configuration Auto-Save:**
+   - NX-OS automatically saves running-config to startup-config
+   - No need for "copy run start" after every change
+   - Can be disabled: no system auto-save
+
+3. **Virtual Port Channel (vPC):**
+   - Allows single device to dual-home to two switches
+   - Appears as single port-channel to downstream device
+   - Eliminates spanning tree blocked ports
+   - Requires peer-link and peer-keepalive link
+
+4. **Checkpoint and Rollback:**
+   - Create configuration checkpoints
+   - Rollback to previous checkpoint if needed
+   - Useful for testing configuration changes
+
+5. **FabricPath:**
+   - Layer 2 multipathing technology
+   - Uses IS-IS for Layer 2 routing
+   - Alternative to traditional spanning tree
+
+6. **VXLAN:**
+   - Layer 2 overlay over Layer 3 network
+   - Extends Layer 2 domains across Layer 3 boundaries
+   - Uses EVPN for control plane
+
+7. **Modular CLI:**
+   - Similar to IOS but with differences
+   - Some commands are more verbose
+   - Better structured for automation
+
+Key Differences: NX-OS vs IOS/IOS-XE
+-------------------------------------
+
+1. **Feature Enablement:**
+   - NX-OS: Must enable features first
+   - IOS: Features enabled by default
+
+2. **Configuration Save:**
+   - NX-OS: Auto-saves (can be disabled)
+   - IOS: Must manually save
+
+3. **Interface Naming:**
+   - NX-OS: Ethernet1/1 (module/port)
+   - IOS: GigabitEthernet0/0/1
+
+4. **Layer 3 Interfaces:**
+   - NX-OS: "no switchport" to make interface Layer 3
+   - IOS: "no switchport" or routed by default
+
+5. **Routing Protocol Configuration:**
+   - NX-OS: Applied per-interface
+   - IOS: Network statements or interface commands
+
+6. **VRF Configuration:**
+   - NX-OS: "vrf context" command
+   - IOS: "ip vrf" command
+
+Notes
+-----
+
+- NX-OS is designed for data center environments
+- Optimized for low latency and high throughput
+- Strong support for overlay technologies (VXLAN, OTV)
+- vPC is critical for modern data center designs
+- Use "show feature" to see what's enabled
+- Configuration changes take effect immediately
+- Use checkpoints before major changes
+- ISSU (In-Service Software Upgrade) allows upgrades with minimal downtime
+- Python scripting is natively supported on NX-OS
+- Use "terminal length 0" to disable page breaks for automation

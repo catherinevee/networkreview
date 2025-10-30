@@ -1,0 +1,740 @@
+================================================================================
+                    HOW MPLS (MULTIPROTOCOL LABEL SWITCHING) WORKS
+================================================================================
+
+MPLS is a high-performance routing technique that directs data packets based on
+short path labels rather than long network addresses, avoiding complex routing
+table lookups and enabling the creation of end-to-end circuits across any type
+of transport medium using any available protocol.
+
+================================================================================
+1. MPLS FUNDAMENTALS
+================================================================================
+
+1.1 What is MPLS?
+-----------------
+- Multiprotocol Label Switching (MPLS) is a data-carrying mechanism that
+  operates between Layer 2 (Data Link) and Layer 3 (Network) - often referred
+  to as "Layer 2.5"
+- Uses labels (short, fixed-length identifiers) instead of IP addresses for
+  forwarding decisions
+- Provides connection-oriented service over connectionless IP networks
+- Supports multiple protocols (IPv4, IPv6, IPX, AppleTalk, etc.)
+
+1.2 MPLS Label Structure
+-------------------------
+The MPLS label is 32 bits (4 bytes) and contains:
+
+┌────────────────────────────────────────────────────────────┐
+│  Label (20 bits) │ Exp (3 bits) │ S (1 bit) │ TTL (8 bits) │
+└────────────────────────────────────────────────────────────┘
+
+- Label (20 bits): The actual label value (0-1,048,575)
+- Exp/TC (3 bits): Experimental bits, now used for Traffic Class (QoS)
+- S (1 bit): Bottom of Stack indicator (1 = bottom, 0 = more labels)
+- TTL (8 bits): Time to Live (similar to IP TTL)
+
+Reserved Label Values:
+- 0: IPv4 Explicit NULL
+- 1: Router Alert
+- 2: IPv6 Explicit NULL
+- 3: Implicit NULL
+- 4-15: Reserved
+- 16-1,048,575: Available for use
+
+1.3 MPLS Position in Packet
+----------------------------
+[Ethernet Header][MPLS Label(s)][IP Header][TCP/UDP Header][Data][FCS]
+                  ↑
+           Inserted between L2 and L3
+
+================================================================================
+2. MPLS NETWORK COMPONENTS
+================================================================================
+
+2.1 Label Switching Routers (LSRs)
+-----------------------------------
+- LSR: Any router that participates in MPLS label switching
+- Edge LSR (E-LSR): LSR at the edge of the MPLS domain
+- Label Edge Router (LER): Same as E-LSR, performs label push/pop operations
+
+Key LSR types:
+┌─────────────────────────────────────────────────────────────────┐
+│  Ingress LER    →    Transit LSR    →    Transit LSR    →  Egress LER  │
+│  (Push label)        (Swap label)        (Swap label)      (Pop label) │
+└─────────────────────────────────────────────────────────────────┘
+
+2.2 Provider Edge (PE) vs Provider (P) Routers
+-----------------------------------------------
+- PE Router: Edge router in service provider network (connects to customer)
+- P Router: Core router in service provider network (transports MPLS traffic)
+- CE Router: Customer Edge router (connects to PE)
+
+Customer Site ←→ [CE] ←→ [PE] ←→ [P] ←→ [P] ←→ [PE] ←→ [CE] ←→ Customer Site
+
+2.3 Label Switched Path (LSP)
+------------------------------
+- LSP: The path that labeled packets follow through the MPLS network
+- Unidirectional path from ingress LER to egress LER
+- Established by label distribution protocols
+- Can be static (manually configured) or dynamic (signaled)
+
+================================================================================
+3. HOW MPLS FORWARDING WORKS
+================================================================================
+
+3.1 Label Operations
+--------------------
+1. PUSH: Add a label to the packet (Ingress LER)
+2. SWAP: Replace one label with another (Transit LSR)
+3. POP: Remove the label (Egress LER or Penultimate Hop)
+
+3.2 Label Distribution Protocol (LDP)
+--------------------------------------
+LDP is used to distribute labels between LSRs:
+
+Step 1: Neighbor Discovery
+- LSRs send UDP Hello messages (port 646) to multicast 224.0.0.2
+- When neighbors discover each other, they establish TCP session (port 646)
+
+Step 2: Session Establishment
+- TCP connection established between LDP peers
+- Peers negotiate session parameters
+
+Step 3: Label Advertisement
+- LSRs advertise label bindings to their peers
+- Independent mode: Advertise labels without waiting for downstream
+- Ordered mode: Wait for downstream label before advertising
+
+Step 4: Label Mapping
+- Each LSR builds a Label Information Base (LIB)
+- LSR selects labels to use and builds Label Forwarding Information Base (LFIB)
+
+3.3 Forwarding Tables
+---------------------
+Three key tables in MPLS:
+
+A) Forwarding Information Base (FIB)
+   - Standard IP routing table
+   - Destination prefix → Next hop, outgoing interface
+
+B) Label Information Base (LIB)
+   - All label bindings learned from neighbors
+   - Prefix → Local label, Remote label, Next hop
+
+C) Label Forwarding Information Base (LFIB)
+   - Actual forwarding table used for MPLS switching
+   - Incoming label → Operation (PUSH/SWAP/POP), Outgoing label, Next hop
+
+3.4 Packet Forwarding Example
+------------------------------
+Scenario: Packet travels from CE1 → PE1 → P1 → P2 → PE2 → CE2
+
+1. CE1 sends IP packet to PE1 (no label)
+2. PE1 (Ingress LER):
+   - Looks up destination in FIB
+   - Performs PUSH operation
+   - Adds label 100, forwards to P1
+
+3. P1 (Transit LSR):
+   - Receives packet with label 100
+   - Looks up label 100 in LFIB
+   - Performs SWAP operation: 100 → 200
+   - Forwards to P2
+
+4. P2 (Penultimate LSR):
+   - Receives packet with label 200
+   - Looks up label 200 in LFIB
+   - Performs POP operation (Penultimate Hop Popping - PHP)
+   - Forwards IP packet (no label) to PE2
+
+5. PE2 (Egress LER):
+   - Receives IP packet
+   - Performs normal IP routing
+   - Forwards to CE2
+
+Why PHP (Penultimate Hop Popping)?
+- Reduces processing on egress router
+- Egress router would just pop the label and do IP lookup anyway
+- More efficient to pop one hop earlier
+
+================================================================================
+4. LABEL DISTRIBUTION PROTOCOLS
+================================================================================
+
+4.1 Label Distribution Protocol (LDP)
+--------------------------------------
+- RFC 5036: LDP Specification
+- Used for establishing LSPs for IP routing (IGP-based)
+- Automatically creates LSPs following IGP (OSPF, ISIS) paths
+- Liberal Label Retention Mode: Keeps all received labels
+- Conservative Label Retention Mode: Keeps only labels from next-hop
+
+LDP Operation Modes:
+- Downstream on Demand (DoD): Request labels from downstream
+- Unsolicited Downstream (UD): Downstream sends labels without request
+
+4.2 Resource Reservation Protocol - Traffic Engineering (RSVP-TE)
+------------------------------------------------------------------
+- RFC 3209: RSVP-TE Extensions to RSVP for LSP Tunnels
+- Used for MPLS Traffic Engineering
+- Constraint-based routing (bandwidth, admin groups, metrics)
+- Explicit path control (strict or loose hops)
+- Fast Reroute (FRR) support for protection
+
+RSVP-TE Messages:
+- PATH: Sent from ingress to egress, reserves resources downstream
+- RESV: Sent from egress to ingress, confirms reservation and distributes labels
+- PathTear: Tears down PATH state
+- ResvTear: Tears down RESV state
+
+4.3 Border Gateway Protocol (BGP) for MPLS
+-------------------------------------------
+- RFC 4364: BGP/MPLS IP VPNs
+- RFC 8277: Using BGP to Bind MPLS Labels to Address Prefixes
+- Used in MPLS L3VPN (VPNv4/VPNv6) for label distribution
+- Exchanges VPN routes with labels attached
+- Uses MP-BGP (Multiprotocol BGP)
+
+4.4 Segment Routing (SR-MPLS)
+-----------------------------
+- RFC 8660: Segment Routing with MPLS data plane
+- Uses IGP (OSPF/ISIS) extensions to distribute segment identifiers
+- Source-based routing (ingress encodes full path)
+- No per-flow state in core (stateless)
+- Simplifies network operations
+
+================================================================================
+5. MPLS APPLICATIONS
+================================================================================
+
+5.1 MPLS Layer 3 VPNs (L3VPN)
+-----------------------------
+- RFC 4364: BGP/MPLS IP VPNs
+- Provides isolated IP routing between customer sites
+- Uses VRFs (Virtual Routing and Forwarding) to separate customer traffic
+- Two labels: VPN label (identifies customer) + IGP label (reaches PE)
+
+Architecture:
+[CE1]--[PE1]--[P]--[P]--[PE2]--[CE2]
+       │                  │
+       └─ VRF: Customer A ┘
+
+Label Stack Example:
+┌─────────────┐
+│  IGP Label  │ ← Outer label (gets PE2)
+├─────────────┤
+│  VPN Label  │ ← Inner label (identifies VRF)
+├─────────────┤
+│  IP Packet  │
+└─────────────┘
+
+5.2 MPLS Layer 2 VPNs (L2VPN)
+-----------------------------
+RFC 4447: Pseudowire Setup and Maintenance using LDP
+RFC 4448: Encapsulation Methods for Transport of Layer 2 Frames over MPLS
+
+Types:
+- Virtual Private Wire Service (VPWS): Point-to-point L2 circuit
+- Virtual Private LAN Service (VPLS): Multipoint L2 VPN (virtual switch)
+- Ethernet VPN (EVPN): Next-gen L2VPN using BGP
+
+Pseudowire: Emulates point-to-point connection over MPLS
+- Carries Ethernet, Frame Relay, ATM, HDLC, PPP frames
+- Control word (optional): Contains sequence number, flags
+
+5.3 MPLS Traffic Engineering (MPLS-TE)
+---------------------------------------
+- RFC 3209: RSVP-TE for LSP Tunnels
+- Optimizes network resource utilization
+- Routes traffic based on bandwidth, latency, admin constraints
+- Load balancing across multiple paths
+- Fast Reroute (FRR) for sub-50ms failover
+
+Constraint-Based Routing:
+- Bandwidth requirements
+- Administrative groups (colors)
+- Explicit paths (avoid certain links/nodes)
+- Metrics (TE metric vs IGP metric)
+
+Fast Reroute Protection:
+- One-to-One backup: Dedicated backup tunnel per protected LSP
+- Facility backup: Shared backup tunnel protects multiple LSPs
+  - Link protection: Protects against link failure
+  - Node protection: Protects against node failure
+
+5.4 Quality of Service (QoS) in MPLS
+-------------------------------------
+- RFC 3270: MPLS Support of Differentiated Services
+- RFC 5462: MPLS TC Field Definition
+
+QoS Models:
+1. Pipe Mode: Provider sets QoS markings
+2. Uniform Mode: Customer QoS preserved end-to-end
+3. Short Pipe Mode: Customer QoS at edge, provider QoS in core
+
+EXP bits (now TC bits) carry QoS markings:
+- Maps to IP Precedence or DSCP values
+- Used for traffic classification and queue selection
+
+================================================================================
+6. MPLS CONTROL PLANE vs DATA PLANE
+================================================================================
+
+6.1 Control Plane
+-----------------
+Establishes LSPs and distributes labels:
+- LDP: Label distribution for IGP-based LSPs
+- RSVP-TE: Traffic engineering LSP signaling
+- BGP: VPN label distribution
+- IGP (OSPF/ISIS): Routing information
+
+Control Plane Protocols:
+┌──────────────────────────────────────────────┐
+│  Application: BGP, LDP, RSVP-TE              │
+│  Transport: TCP (BGP, LDP session)           │
+│  Network: IP                                 │
+└──────────────────────────────────────────────┘
+
+6.2 Data Plane
+--------------
+Forwards labeled packets:
+- Label lookup in LFIB
+- Label operations: PUSH, SWAP, POP
+- QoS enforcement
+- TTL handling
+
+Data Plane Packet:
+┌──────────────────────────────────────────────┐
+│  Layer 2 Header                              │
+│  MPLS Label (may be stacked)                 │
+│  IP Packet                                   │
+└──────────────────────────────────────────────┘
+
+================================================================================
+7. MPLS BENEFITS
+================================================================================
+
+1. Simplified Forwarding
+   - Label lookup faster than longest-match IP lookup (historically)
+   - Modern hardware has eliminated this advantage
+
+2. Traffic Engineering
+   - Explicit path control
+   - Bandwidth guarantees
+   - Load balancing
+
+3. VPN Services
+   - Scalable L2/L3 VPN deployment
+   - Customer separation without encryption overhead
+   - Flexible service offerings
+
+4. Quality of Service
+   - End-to-end QoS across provider network
+   - Integration with DiffServ
+
+5. Fast Failover
+   - Fast Reroute provides sub-50ms convergence
+   - Better than IP routing convergence
+
+6. Protocol Independence
+   - Can carry any protocol (IPv4, IPv6, Ethernet, etc.)
+   - Future-proof infrastructure
+
+================================================================================
+8. MPLS DISADVANTAGES AND CHALLENGES
+================================================================================
+
+1. Complexity
+   - Requires specialized knowledge
+   - Multiple protocols to manage (LDP, RSVP-TE, BGP)
+
+2. Visibility
+   - Difficult to trace labeled packets
+   - Troubleshooting requires MPLS-aware tools
+
+3. Limited Encryption
+   - MPLS provides separation, not encryption
+   - Need additional security for sensitive data
+
+4. Vendor Lock-in
+   - Some MPLS features proprietary
+   - Interoperability challenges
+
+5. Cost
+   - MPLS WAN services expensive compared to Internet VPN
+   - Specialized hardware requirements
+
+6. Scalability Limits
+   - Label space limitations (20 bits)
+   - State requirements for RSVP-TE
+
+================================================================================
+9. MPLS CONFIGURATION EXAMPLES
+================================================================================
+
+9.1 Cisco IOS/IOS-XE LDP Configuration
+---------------------------------------
+! Enable CEF (required for MPLS)
+ip cef
+
+! Enable MPLS globally
+mpls ip
+
+! Enable MPLS on interfaces
+interface GigabitEthernet0/0
+ ip address 10.0.1.1 255.255.255.0
+ mpls ip
+
+interface GigabitEthernet0/1
+ ip address 10.0.2.1 255.255.255.0
+ mpls ip
+
+! Configure LDP Router ID
+mpls ldp router-id Loopback0 force
+
+! Optional: MD5 authentication for LDP
+mpls ldp neighbor 10.1.1.2 password cisco123
+
+9.2 Juniper Junos MPLS Configuration
+-------------------------------------
+# Enable MPLS on interfaces
+set interfaces ge-0/0/0 unit 0 family mpls
+set interfaces ge-0/0/1 unit 0 family mpls
+
+# Configure MPLS protocol
+set protocols mpls interface ge-0/0/0.0
+set protocols mpls interface ge-0/0/1.0
+
+# Configure LDP
+set protocols ldp interface ge-0/0/0.0
+set protocols ldp interface ge-0/0/1.0
+
+# Configure LDP Router ID
+set protocols ldp router-id 10.1.1.1
+
+9.3 Cisco IOS-XR MPLS Configuration
+------------------------------------
+! Enable MPLS LDP
+mpls ldp
+ router-id 10.1.1.1
+ interface GigabitEthernet0/0/0/0
+ !
+ interface GigabitEthernet0/0/0/1
+ !
+!
+
+! Enable MPLS on interfaces
+interface GigabitEthernet0/0/0/0
+ ipv4 address 10.0.1.1 255.255.255.0
+!
+interface GigabitEthernet0/0/0/1
+ ipv4 address 10.0.2.1 255.255.255.0
+!
+
+9.4 RSVP-TE Tunnel Configuration (Cisco IOS-XE)
+------------------------------------------------
+! Configure RSVP-TE tunnel
+interface Tunnel0
+ ip unnumbered Loopback0
+ tunnel mode mpls traffic-eng
+ tunnel destination 10.2.2.2
+ tunnel mpls traffic-eng bandwidth 100000
+ tunnel mpls traffic-eng path-option 1 explicit name PATH1
+ tunnel mpls traffic-eng path-option 2 dynamic
+
+! Define explicit path
+ip explicit-path name PATH1 enable
+ next-address 10.0.1.2
+ next-address 10.0.2.2
+ next-address 10.2.2.2
+
+! Enable RSVP on interfaces
+interface GigabitEthernet0/0
+ ip rsvp bandwidth 1000000 1000000
+
+! Enable MPLS TE globally
+mpls traffic-eng tunnels
+
+! Enable MPLS TE in OSPF
+router ospf 1
+ mpls traffic-eng router-id Loopback0
+ mpls traffic-eng area 0
+
+================================================================================
+10. MPLS VERIFICATION COMMANDS
+================================================================================
+
+10.1 Cisco IOS/IOS-XE
+---------------------
+! Verify MPLS interfaces
+show mpls interfaces
+show mpls interfaces detail
+
+! Verify LDP neighbors
+show mpls ldp neighbor
+show mpls ldp neighbor detail
+
+! Verify label bindings
+show mpls ldp bindings
+show mpls ldp bindings 10.2.2.2/32
+
+! Verify MPLS forwarding table
+show mpls forwarding-table
+show mpls forwarding-table labels 16
+
+! Verify RSVP-TE tunnels
+show mpls traffic-eng tunnels
+show mpls traffic-eng tunnels brief
+
+! Trace MPLS LSP
+traceroute mpls ipv4 10.2.2.2/32
+
+10.2 Juniper Junos
+------------------
+# Show MPLS interfaces
+show mpls interface
+
+# Show LDP neighbors
+show ldp neighbor
+show ldp session
+
+# Show label bindings
+show ldp database
+show route table mpls.0
+
+# Show MPLS forwarding table
+show route forwarding-table family mpls
+
+# Show RSVP sessions
+show rsvp session
+show rsvp session detail
+
+# Trace MPLS path
+traceroute mpls ldp 10.2.2.2/32
+
+10.3 Cisco IOS-XR
+-----------------
+# Show MPLS interfaces
+show mpls interfaces
+
+# Show LDP neighbors
+show mpls ldp neighbor
+show mpls ldp neighbor brief
+
+# Show label bindings
+show mpls ldp bindings
+show mpls ldp forwarding
+
+# Show MPLS forwarding table
+show mpls forwarding
+
+# Show RSVP-TE tunnels
+show mpls traffic-eng tunnels
+show rsvp session
+
+================================================================================
+11. TROUBLESHOOTING MPLS
+================================================================================
+
+11.1 Common Issues
+------------------
+Issue: LDP neighbors not forming
+- Check IP connectivity between router IDs
+- Verify MPLS enabled on interfaces
+- Check firewall rules (TCP/UDP 646)
+- Verify router ID configuration
+
+Issue: Labels not being assigned
+- Check CEF is enabled (Cisco)
+- Verify IGP is running and routes exist
+- Check LDP session state
+- Review label filtering policies
+
+Issue: MPLS traffic not forwarding
+- Verify LFIB entries exist
+- Check MTU (MPLS adds 4 bytes per label)
+- Verify label operations (PUSH/SWAP/POP)
+- Check for label stack depth limits
+
+Issue: VPN traffic not working
+- Verify VRF configuration on PEs
+- Check BGP VPNv4 session between PEs
+- Verify route targets import/export
+- Check label stack (should have 2 labels)
+
+11.2 Debug Commands
+-------------------
+Cisco IOS/IOS-XE:
+debug mpls ldp transport events
+debug mpls ldp messages
+debug mpls packet
+debug mpls traffic-eng tunnels
+
+Juniper Junos:
+set protocols ldp traceoptions file ldp-debug
+set protocols ldp traceoptions flag all
+
+Cisco IOS-XR:
+debug mpls ldp messages
+debug mpls ldp transport
+
+================================================================================
+12. EVOLUTION: MPLS TO SEGMENT ROUTING
+================================================================================
+
+12.1 Why Segment Routing?
+--------------------------
+Traditional MPLS challenges:
+- LDP/RSVP-TE add protocol complexity
+- Per-flow state in RSVP-TE doesn't scale
+- Difficult to implement SDN/automation
+
+Segment Routing Benefits:
+- Uses existing IGP (OSPF/ISIS), no LDP needed
+- Source routing (path encoded in packet header)
+- Stateless core (no per-tunnel state)
+- Simplifies operations and automation
+- Better integration with SDN controllers
+
+12.2 SR-MPLS vs Traditional MPLS
+---------------------------------
+Traditional MPLS:
+- LDP distributes labels hop-by-hop
+- RSVP-TE signals paths with state
+- Each LSR maintains signaling state
+
+SR-MPLS:
+- IGP distributes segment IDs (labels)
+- Ingress encodes entire path as label stack
+- Core LSRs just swap labels (stateless)
+- No LDP or RSVP-TE needed
+
+12.3 Segment Routing Evolution Path
+------------------------------------
+Phase 1: Traditional MPLS (LDP + RSVP-TE)
+Phase 2: Hybrid (SR-MPLS + LDP coexistence)
+Phase 3: Pure SR-MPLS (retire LDP/RSVP-TE)
+Phase 4: SRv6 (Segment Routing over IPv6)
+
+================================================================================
+REFERENCES AND DOCUMENTATION
+================================================================================
+
+1. MPLS Architecture and Fundamentals
+   - RFC 3031: Multiprotocol Label Switching Architecture (2001)
+   - RFC 3032: MPLS Label Stack Encoding (2001)
+   - RFC 5462: Multiprotocol Label Switching (MPLS) Label Stack Entry: "EXP"
+               Field Renamed to "Traffic Class" Field (2009)
+
+2. Label Distribution Protocols
+   - RFC 5036: LDP Specification (2007)
+   - RFC 3209: RSVP-TE: Extensions to RSVP for LSP Tunnels (2001)
+   - RFC 5036: Label Distribution Protocol (LDP) Specification (2007)
+   - RFC 4447: Pseudowire Setup and Maintenance Using LDP (2006)
+
+3. MPLS VPN
+   - RFC 4364: BGP/MPLS IP Virtual Private Networks (VPNs) (2006)
+   - RFC 4761: Virtual Private LAN Service (VPLS) Using BGP (2007)
+   - RFC 4762: Virtual Private LAN Service (VPLS) Using LDP (2007)
+   - RFC 7432: BGP MPLS-Based Ethernet VPN (EVPN) (2015)
+
+4. MPLS Traffic Engineering
+   - RFC 3270: Multi-Protocol Label Switching (MPLS) Support of Differentiated
+               Services (2002)
+   - RFC 4090: Fast Reroute Extensions to RSVP-TE for LSP Tunnels (2005)
+   - RFC 4124: Protocol Extensions for Support of Diffserv-aware MPLS TE (2005)
+
+5. Segment Routing
+   - RFC 8402: Segment Routing Architecture (2018)
+   - RFC 8660: Segment Routing with MPLS Data Plane (2019)
+   - RFC 8667: IS-IS Extensions for Segment Routing (2019)
+   - RFC 8665: OSPF Extensions for Segment Routing (2019)
+
+6. Books
+   - "MPLS Fundamentals" by Luc De Ghein (Cisco Press, 2006)
+   - "MPLS and VPN Architectures" by Ivan Pepelnjak and Jim Guichard
+     (Cisco Press, 2001)
+   - "MPLS Configuration on Cisco IOS Software" by Umesh Lakshman and
+     Lancy Lobo (Cisco Press, 2005)
+   - "Deploying IP and MPLS QoS for Multiservice Networks: Theory and
+     Practice" by John Evans and Clarence Filsfils (Morgan Kaufmann, 2007)
+
+7. Cisco Documentation
+   - Cisco IOS MPLS Configuration Guide
+     https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/mp_basic/configuration/
+   - Cisco MPLS Traffic Engineering (TE) Configuration Guide
+   - Cisco Segment Routing Configuration Guide
+
+8. Juniper Documentation
+   - Junos OS MPLS Applications Configuration Guide
+     https://www.juniper.net/documentation/us/en/software/junos/mpls/
+   - Day One: MPLS Up and Running
+   - Day One: MPLS for Enterprise Engineers
+
+9. Industry Resources
+   - IETF MPLS Working Group: https://datatracker.ietf.org/wg/mpls/
+   - MPLS Forum (historical): Promoted MPLS standards and interoperability
+   - Segment Routing home: https://www.segment-routing.net/
+
+10. Training and Certification
+    - Cisco CCNP Enterprise (MPLS fundamentals)
+    - Cisco CCIE Enterprise Infrastructure (Advanced MPLS)
+    - Juniper JNCIS-SP and JNCIE-SP (MPLS focus)
+
+11. Online Resources
+    - PacketLife.net MPLS Cheat Sheets
+    - ipSpace.net blog by Ivan Pepelnjak (MPLS deep dives)
+    - NetworkLessons.com MPLS tutorials
+
+================================================================================
+BEST PRACTICES CHECKLIST
+================================================================================
+
+☐ Design Phase
+  ☐ Plan IP addressing for loopbacks (used as LDP router IDs)
+  ☐ Design IGP (OSPF or ISIS) for MPLS underlay
+  ☐ Determine label distribution protocol (LDP vs RSVP-TE vs SR-MPLS)
+  ☐ Plan MTU sizing (add 4-8 bytes per label)
+  ☐ Document LSP paths and protection requirements
+
+☐ Deployment Phase
+  ☐ Enable CEF/forwarding on all devices
+  ☐ Configure stable loopback router IDs
+  ☐ Enable MPLS on core-facing interfaces only
+  ☐ Use LDP authentication between peers
+  ☐ Configure consistent MTU across MPLS domain
+  ☐ Implement QoS policies before traffic engineering
+
+☐ Security
+  ☐ Enable LDP MD5 authentication
+  ☐ Filter MPLS at network edge (no labeled packets from customers)
+  ☐ Implement TTL propagation policy
+  ☐ Use separate routing instances (VRFs) for management
+  ☐ Apply rate limiting to control plane protocols
+
+☐ High Availability
+  ☐ Configure MPLS Fast Reroute for critical LSPs
+  ☐ Implement IGP fast convergence (BFD, fast hellos)
+  ☐ Use NSF/NSR on core routers
+  ☐ Plan for graceful restart on LDP/RSVP
+  ☐ Redundant LSP paths for TE tunnels
+
+☐ Monitoring and Operations
+  ☐ Monitor LDP neighbor states
+  ☐ Track label allocation and utilization
+  ☐ Monitor LSP traffic statistics
+  ☐ Implement LSP ping/traceroute testing
+  ☐ Set up alerts for label exhaustion
+  ☐ Document all LSPs and their purposes
+
+☐ Performance Optimization
+  ☐ Tune LDP timers for environment
+  ☐ Implement PHP (Penultimate Hop Popping)
+  ☐ Use explicit null only when required
+  ☐ Load balance across ECMP MPLS paths
+  ☐ Optimize label stack depth (avoid deep stacks)
+
+================================================================================
+END OF DOCUMENT
+================================================================================

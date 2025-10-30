@@ -1,0 +1,1593 @@
+InfiniBand and High-Performance Interconnects Best Practices
+==============================================================
+
+This document provides comprehensive best practices for InfiniBand and other high-performance interconnects used in HPC (High-Performance Computing), AI/ML clusters, and storage systems. It covers architecture, configuration, optimization, and troubleshooting for maximum performance.
+
+Introduction
+------------
+
+InfiniBand is a high-performance networking technology designed for applications requiring ultra-low latency and high bandwidth. Unlike Ethernet, which was designed for general-purpose networking, InfiniBand is purpose-built for data center interconnects, particularly HPC clusters and storage systems.
+
+Key characteristics:
+- Ultra-low latency: Sub-microsecond (< 1 μs)
+- High bandwidth: Up to 800 Gbps (NDR)
+- RDMA native support
+- Lossless transport
+- Hardware-based transport protocol
+- Credit-based flow control (no packet loss)
+
+InfiniBand vs. Other High-Performance Technologies
+---------------------------------------------------
+
+### Technology Comparison
+
+**InfiniBand:**
+```
+Pros:
+- Lowest latency (0.5-0.7 μs)
+- Native RDMA support
+- Lossless by design
+- Mature ecosystem (20+ years)
+- Proven at extreme scale (thousands of nodes)
+- Quality of Service built-in
+- Efficient CPU utilization
+
+Cons:
+- Proprietary (vendor lock-in)
+- Higher cost per port
+- Separate network infrastructure
+- Smaller ecosystem than Ethernet
+- Requires specialized knowledge
+
+Best For:
+- HPC clusters (weather, molecular dynamics, physics)
+- AI/ML training (distributed GPU)
+- High-performance storage (NVMe-oF, parallel file systems)
+- Financial trading (ultra-low latency)
+```
+
+**RoCE (RDMA over Converged Ethernet):**
+```
+Pros:
+- Uses existing Ethernet infrastructure
+- Lower cost than InfiniBand
+- RDMA capabilities
+- Familiar to network teams
+- Converged network (storage + compute + management)
+
+Cons:
+- Higher latency than InfiniBand (1-3 μs)
+- Requires lossless Ethernet (PFC, ECN)
+- Complex configuration
+- Less mature than InfiniBand for RDMA
+- Performance variability
+
+Best For:
+- Data center consolidation
+- Moderate performance requirements
+- Mixed workloads
+- Cost-sensitive deployments
+```
+
+**Omni-Path (Intel):**
+```
+Status: Discontinued (2021)
+- Intel's InfiniBand competitor
+- Similar performance characteristics
+- Limited adoption
+- Sunset in favor of Ethernet/CXL
+```
+
+**Slingshot (HPE/Cray):**
+```
+Pros:
+- Designed for exascale computing
+- Ethernet-based with custom features
+- Adaptive routing
+- Congestion control
+
+Cons:
+- Proprietary
+- Limited to HPE systems
+- Higher cost
+
+Best For:
+- Supercomputing centers
+- National laboratories
+- Exascale HPC
+```
+
+InfiniBand Architecture
+-----------------------
+
+### 1. InfiniBand Generations and Speeds
+
+**Speed Evolution:**
+
+```
+SDR (Single Data Rate):
+- Speed: 2.5 Gbps per lane
+- 4x link: 8 Gbps (10 Gbps raw)
+- Year: 2001
+- Status: Obsolete
+
+DDR (Double Data Rate):
+- Speed: 5 Gbps per lane
+- 4x link: 16 Gbps (20 Gbps raw)
+- Year: 2005
+- Status: Obsolete
+
+QDR (Quad Data Rate):
+- Speed: 10 Gbps per lane
+- 4x link: 32 Gbps (40 Gbps raw)
+- Year: 2008
+- Status: Legacy, still in use
+
+FDR (Fourteen Data Rate):
+- Speed: 14 Gbps per lane (14.0625 actual)
+- 4x link: 56 Gbps (54.54 Gbps effective)
+- Year: 2011
+- Status: Common in older HPC systems
+
+EDR (Enhanced Data Rate):
+- Speed: 25 Gbps per lane
+- 4x link: 100 Gbps (103.125 Gbps raw)
+- Year: 2014
+- Status: Widely deployed, mature
+
+HDR (High Data Rate):
+- Speed: 50 Gbps per lane
+- 4x link: 200 Gbps (206.25 Gbps raw)
+- Year: 2017
+- Status: Current generation, widely adopted
+
+NDR (Next Data Rate):
+- Speed: 100 Gbps per lane
+- 4x link: 400 Gbps (412.5 Gbps raw)
+- Year: 2020
+- Status: Latest generation, emerging
+
+XDR (eXtended Data Rate):
+- Speed: 250 Gbps per lane
+- 4x link: 1 Tbps
+- Year: 2023 (planned)
+- Status: Future
+```
+
+**Link Width:**
+```
+1x: Single lane (rare)
+4x: Four lanes (most common)
+8x: Eight lanes (uncommon)
+12x: Twelve lanes (switches, uncommon)
+
+Naming Convention:
+QDR = Quad Data Rate (10 Gbps per lane)
+FDR10 = FDR at 10.3125 Gbps per lane (legacy)
+FDR = Full FDR at 14.0625 Gbps per lane
+EDR = Enhanced at 25 Gbps per lane
+HDR = High at 50 Gbps per lane
+```
+
+### 2. InfiniBand Network Topologies
+
+**Fat-Tree Topology (Most Common):**
+
+```
+Structure:
+                 Core Layer (Spine)
+                /      |       \
+               /       |        \
+        Leaf   Leaf   Leaf   Leaf   (Aggregation/Leaf)
+        / | \  / | \  / | \  / | \
+       Compute Nodes (Servers)
+
+Characteristics:
+- Non-blocking at full bisection bandwidth
+- Multiple paths between any two nodes
+- Excellent scalability
+- Common in HPC and AI clusters
+
+Oversubscription Ratios:
+- 1:1 (non-blocking): Every downlink has equal uplink bandwidth
+- 2:1: Two downlinks per uplink (common)
+- 3:1 or 4:1: Higher consolidation (cost savings)
+
+Example 648-node cluster:
+- 18 leaf switches (36 ports each)
+- 36 nodes per leaf (648 total nodes)
+- 9 spine switches
+- Each leaf: 36 downlinks, 9 uplinks (4:1 oversubscription)
+- Or: 18 spine switches for 2:1 oversubscription
+```
+
+**2-Level Fat-Tree:**
+```
+For smaller clusters (< 648 nodes EDR, < 1296 nodes HDR)
+
+Example:
+- 36-port switches
+- 18 switches total
+- 9 top-of-rack (ToR) switches
+- 9 spine switches
+- Each ToR: 18 downlinks (compute), 18 uplinks (spine)
+- Result: 162 compute nodes, 1:1 non-blocking
+```
+
+**3-Level Fat-Tree:**
+```
+For very large clusters (> 1000 nodes)
+
+Layers:
+- Edge switches (ToR)
+- Aggregation switches (Leaf)
+- Core switches (Spine)
+
+Example:
+- 10,000+ node cluster
+- Edge: Connect compute nodes
+- Aggregation: Connect edge switches
+- Core: Connect aggregation switches
+- Carefully plan oversubscription at each tier
+```
+
+**Dragonfly Topology:**
+
+```
+Characteristics:
+- High-radix switches
+- Lower switch count than fat-tree
+- Excellent for large-scale systems
+- Used in some supercomputers
+
+Structure:
+- Switches grouped into "groups"
+- All-to-all within group
+- Sparse connections between groups
+- Adaptive routing critical
+
+Best For:
+- Exascale systems
+- Very large HPC installations
+- Cost-optimized large deployments
+```
+
+**Torus Topology:**
+
+```
+3D or 5D torus (older systems)
+- Each node connects to neighbors in multiple dimensions
+- Common in older Cray systems
+- Good locality for certain applications
+- Less common in modern InfiniBand deployments
+```
+
+### 3. InfiniBand Components
+
+**Host Channel Adapters (HCAs):**
+
+Definition: InfiniBand network interface cards for compute nodes
+
+Major Vendors:
+- Nvidia/Mellanox ConnectX series (dominant)
+- Intel (discontinued Omni-Path)
+
+Common HCA Models (Nvidia/Mellanox):
+```
+ConnectX-3:
+- FDR/FDR10 (56 Gbps)
+- PCIe Gen3 x8
+- Legacy, still in use
+
+ConnectX-4:
+- EDR (100 Gbps)
+- PCIe Gen3 x16
+- Single or dual port
+- Widely deployed
+
+ConnectX-5:
+- EDR (100 Gbps) or HDR (100/200 Gbps)
+- PCIe Gen3 x16 or Gen4 x16
+- Improved performance
+- Common in modern clusters
+
+ConnectX-6:
+- HDR (200 Gbps) or HDR100 (100 Gbps)
+- PCIe Gen4 x16
+- Current generation
+- Enhanced features (adaptive routing, SHARP)
+
+ConnectX-7:
+- NDR (400 Gbps)
+- PCIe Gen5 x16
+- Latest generation
+- Ultra-low latency
+```
+
+**InfiniBand Switches:**
+
+Switch Types:
+```
+Unmanaged Switches:
+- Small (8-36 ports)
+- Basic functionality
+- Low cost
+- Use: Lab environments, small clusters
+
+Managed Switches:
+- 36-40 ports (leaf) to 200+ ports (director-class)
+- Full management capabilities
+- Advanced features
+- Quality of Service (QoS)
+- Adaptive routing
+- Telemetry
+
+Director-Class Switches:
+- 800+ ports (using leaf/spine within chassis)
+- Modular design
+- High availability
+- Enterprise-grade
+- Very high cost
+```
+
+Popular Switch Models (Nvidia/Mellanox):
+```
+Quantum-2 (NDR):
+- 64 ports of 400 Gbps
+- Ultra-low latency
+- SHARP v3 (in-network computing)
+
+Quantum (HDR):
+- 40 ports of 200 Gbps
+- Adaptive routing
+- SHARP aggregation
+
+SB7800/SB7890 (EDR):
+- 36 ports of 100 Gbps
+- Widely deployed
+- Mature platform
+```
+
+**Cables and Optics:**
+
+Cable Types:
+```
+Direct Attach Copper (DAC):
+- Passive: Up to 3-5 meters
+- Active: Up to 15 meters
+- Low cost
+- Low power
+- Use: Intra-rack connections
+
+Active Optical Cable (AOC):
+- Up to 100 meters (or more)
+- Medium cost
+- Use: Inter-rack, short distances
+
+Optical Transceivers + Fiber:
+- Single-mode: Kilometers
+- Multi-mode: Hundreds of meters
+- Highest cost
+- Use: Long-distance, data center interconnect
+
+Breakout Cables:
+- 1x 200G → 2x 100G
+- 1x 400G → 4x 100G
+- Cost optimization
+- Downlink connections
+```
+
+Cable Best Practices:
+- Use passive DAC for short distances (cheaper, reliable)
+- AOC for 5-30 meters
+- Fiber for longer runs
+- Match cable speed to port speed
+- Document all cable connections
+- Label cables clearly
+- Maintain spare cable inventory
+
+InfiniBand Software Stack
+--------------------------
+
+### 1. OFED (OpenFabrics Enterprise Distribution)
+
+**What is OFED:**
+
+Definition: Software stack for InfiniBand and RDMA-capable networks
+
+Components:
+```
+Kernel Drivers:
+- ib_core: Core InfiniBand subsystem
+- mlx4_ib, mlx5_ib: Mellanox HCA drivers
+- ib_ipoib: IP over InfiniBand
+- ib_umad: User MAD (Management Datagram) interface
+- ib_uverbs: User verbs interface
+
+User-Space Libraries:
+- libibverbs: Verbs API (RDMA operations)
+- libmlx4, libmlx5: Vendor-specific libraries
+- libibumad: User MAD library
+- libibmad: MAD library
+- librdmacm: RDMA Connection Manager
+
+Utilities:
+- ibstat: Show HCA status
+- ibv_devinfo: Device information
+- perfquery: Performance counters
+- ibdiagnet: Network diagnostics
+- opensm: Subnet Manager
+```
+
+**Install OFED:**
+
+Download from Nvidia/Mellanox:
+```bash
+# Download latest OFED
+wget https://www.mellanox.com/downloads/ofed/OFED-5.x/MLNX_OFED_LINUX-5.x-x.x.x-ubuntu20.04-x86_64.tgz
+
+# Extract
+tar xzf MLNX_OFED_LINUX-5.x-x.x.x-ubuntu20.04-x86_64.tgz
+cd MLNX_OFED_LINUX-5.x-x.x.x-ubuntu20.04-x86_64
+
+# Install
+sudo ./mlnxofedinstall --all
+
+# Or selective install
+sudo ./mlnxofedinstall --without-fw-update --add-kernel-support
+
+# Restart driver
+sudo /etc/init.d/openibd restart
+
+# Verify installation
+ofed_info -s
+```
+
+Inbox Drivers (Linux Kernel):
+```bash
+# Modern Linux kernels include InfiniBand drivers
+# May not have latest features or performance
+
+# Check if modules loaded
+lsmod | grep ib_
+
+# Load modules manually if needed
+modprobe ib_core
+modprobe mlx5_core
+modprobe mlx5_ib
+modprobe ib_ipoib
+```
+
+### 2. Subnet Manager (SM)
+
+**Role of Subnet Manager:**
+
+Functions:
+- Discovers network topology
+- Assigns Local IDs (LIDs) to nodes
+- Calculates routing tables
+- Programs switches with routes
+- Monitors network health
+- Responds to topology changes
+
+**OpenSM (Open Subnet Manager):**
+
+Most common SM for InfiniBand networks.
+
+Install OpenSM:
+```bash
+# Ubuntu/Debian
+apt-get install opensm
+
+# RHEL/CentOS
+yum install opensm
+
+# Verify installation
+opensm --version
+```
+
+Configure OpenSM:
+```bash
+# Edit /etc/opensm/opensm.conf
+
+# Key parameters:
+
+# Routing algorithm
+routing_engine ftree
+# Options: minhop, updn, ftree, lash, dor
+
+# Priority (higher = preferred master)
+sm_priority 15
+# Range: 0-15, default master priority
+
+# Sweep interval (seconds)
+sweep_interval 10
+# How often to check network
+
+# Number of VLs (Virtual Lanes)
+max_op_vls 8
+
+# Enable QoS
+qos TRUE
+qos_policy_file /etc/opensm/qos-policy.conf
+```
+
+Start OpenSM:
+```bash
+# Start opensm service
+systemctl enable opensm
+systemctl start opensm
+
+# Check status
+systemctl status opensm
+
+# Or run in foreground for debugging
+opensm -g <HCA_GUID> -v
+
+# View logs
+journalctl -u opensm -f
+```
+
+**Multiple Subnet Managers:**
+
+Best Practice: Run multiple SMs for redundancy
+
+Configuration:
+```
+Primary SM (Priority 15):
+- Active master
+- Handles all management
+
+Secondary SM (Priority 10):
+- Standby
+- Takes over if primary fails
+
+Tertiary SM (Priority 5):
+- Additional backup
+```
+
+Deploy SMs:
+```bash
+# On master node
+opensm -g <GUID> -p 15 -f /var/log/opensm-master.log
+
+# On standby node
+opensm -g <GUID> -p 10 -f /var/log/opensm-standby.log
+
+# On second standby
+opensm -g <GUID> -p 5 -f /var/log/opensm-standby2.log
+
+# Only highest priority SM is active
+# Others monitor and take over on failure
+```
+
+SM Best Practices:
+- Always run at least 2 SMs (primary + secondary)
+- Run SM on management nodes, not compute nodes
+- Use same routing engine across all SMs
+- Monitor SM failover in production
+- Document which nodes run SM
+- Test SM failover regularly
+
+### 3. Routing Engines
+
+**Routing Algorithm Selection:**
+
+Min-Hop (Default):
+```
+Characteristics:
+- Shortest path routing
+- Simple, predictable
+- May create hotspots
+- Works for small fabrics
+
+Use When:
+- Small clusters (< 100 nodes)
+- Simple topologies
+- Not performance-critical
+```
+
+Up-Down (UPDN):
+```
+Characteristics:
+- Prevents routing loops
+- Works with any topology
+- May not be optimal for large fabrics
+- Deterministic routing
+
+Use When:
+- General-purpose routing
+- Unknown or irregular topology
+- Default choice for medium clusters
+```
+
+Fat-Tree (FTREE):
+```
+Characteristics:
+- Optimized for fat-tree topologies
+- Balances traffic across paths
+- Best for modern HPC clusters
+- Adaptive routing support
+
+Use When:
+- Fat-tree topology
+- Large HPC clusters
+- Need load balancing
+- Recommended for most deployments
+
+Configuration:
+routing_engine ftree
+```
+
+LASH (Layered Adaptive Shortest-path Hashing):
+```
+Characteristics:
+- Adaptive routing
+- Load balancing
+- More complex
+- Better for irregular topologies
+
+Use When:
+- Need adaptive routing
+- Irregular topologies
+- Congestion issues with static routing
+```
+
+DOR (Dimension Order Routing):
+```
+Characteristics:
+- For torus/mesh topologies
+- Predictable routing
+- Low overhead
+
+Use When:
+- 3D torus or mesh topology
+- Older systems
+- Less common in modern IB
+```
+
+**Configure Routing:**
+
+OpenSM Configuration:
+```bash
+# Edit /etc/opensm/opensm.conf
+
+# For fat-tree
+routing_engine ftree
+
+# Enable adaptive routing
+use_ucast_cache FALSE
+
+# For LASH
+routing_engine lash
+
+# View current routing
+ibdiagnet --ls 10
+```
+
+### 4. IP over InfiniBand (IPoIB)
+
+**Purpose:**
+
+Run IP traffic over InfiniBand fabric for:
+- Management traffic
+- Applications not RDMA-aware
+- Standard TCP/IP protocols
+- Compatibility with existing software
+
+**IPoIB Modes:**
+
+Datagram Mode (Default):
+```
+Characteristics:
+- MTU: 2044 bytes (2048 - 4 byte header)
+- Unreliable transport
+- Compatible with all IB switches
+- Lower performance than Connected mode
+
+Use When:
+- Maximum compatibility needed
+- Management traffic
+- Not performance-critical
+```
+
+Connected Mode:
+```
+Characteristics:
+- MTU: 65520 bytes (64 KB)
+- Reliable connection
+- Higher throughput
+- Lower CPU overhead
+- Better performance
+
+Use When:
+- Performance matters
+- Large data transfers
+- Modern InfiniBand fabric
+```
+
+**Configure IPoIB:**
+
+Set Up IPoIB Interface:
+```bash
+# Load IPoIB module
+modprobe ib_ipoib
+
+# Module should auto-load, verify
+lsmod | grep ib_ipoib
+
+# IPoIB interfaces appear as ib0, ib1, etc.
+ip link show | grep ib
+
+# Configure IP address
+ip addr add 192.168.100.1/24 dev ib0
+ip link set ib0 up
+
+# Or using network configuration files (RHEL/CentOS)
+# Edit /etc/sysconfig/network-scripts/ifcfg-ib0
+cat > /etc/sysconfig/network-scripts/ifcfg-ib0 << 'EOF'
+DEVICE=ib0
+TYPE=InfiniBand
+ONBOOT=yes
+BOOTPROTO=static
+IPADDR=192.168.100.1
+NETMASK=255.255.255.0
+CONNECTED_MODE=yes
+MTU=65520
+EOF
+
+# Restart network
+systemctl restart NetworkManager
+```
+
+Switch to Connected Mode:
+```bash
+# Check current mode
+cat /sys/class/net/ib0/mode
+# Output: datagram
+
+# Switch to connected mode
+echo connected > /sys/class/net/ib0/mode
+
+# Permanent (RHEL/CentOS)
+echo 'CONNECTED_MODE=yes' >> /etc/sysconfig/network-scripts/ifcfg-ib0
+
+# Verify
+cat /sys/class/net/ib0/mode
+# Output: connected
+
+# Check MTU
+ip link show ib0
+# Should show mtu 65520
+```
+
+IPoIB Best Practices:
+- Use Connected mode for performance
+- Set MTU to 65520 (connected mode)
+- Separate IPoIB from RDMA traffic (different subnets)
+- Use IPoIB for management, RDMA for data
+- Configure multiple IPoIB interfaces for redundancy
+
+InfiniBand Performance Optimization
+------------------------------------
+
+### 1. HCA Configuration
+
+**Firmware Updates:**
+
+Keep HCA firmware current:
+```bash
+# Check current firmware version
+ibstat
+
+# Output includes firmware version:
+# Firmware version: 16.35.1012
+
+# Download latest firmware from Nvidia
+# Extract and install
+sudo mlxup -d <device> -i <firmware_image.bin>
+
+# Or use mstflint
+mstflint -d <device> q  # Query current version
+mstflint -d <device> -i <firmware.bin> b  # Burn new firmware
+
+# Reboot after firmware update
+```
+
+**PCIe Configuration:**
+
+Verify PCIe Settings:
+```bash
+# Check PCIe link speed and width
+lspci -vvv -s $(lspci | grep Mellanox | awk '{print $1}') | grep -i "lnk"
+
+# Expected output (ConnectX-6):
+# LnkCap: Speed 16GT/s, Width x16
+# LnkSta: Speed 16GT/s, Width x16
+
+# If speed/width lower than expected:
+# - Check PCIe slot (should be x16 Gen4 for ConnectX-6)
+# - Check BIOS settings
+# - Reseat card
+# - Check for physical damage
+```
+
+BIOS PCIe Settings:
+```
+Enable:
+- PCIe Gen4 (or highest supported)
+- ASPM (Active State Power Management) - Disabled for lowest latency
+- Max Payload Size: 256 bytes or higher
+- Max Read Request Size: 4096 bytes
+
+Disable:
+- ASPM (for ultra-low latency)
+- Power saving features (for consistent performance)
+```
+
+**CPU Affinity and NUMA:**
+
+Verify HCA NUMA Node:
+```bash
+# Check HCA NUMA node
+cat /sys/class/infiniband/mlx5_0/device/numa_node
+
+# Output: 0 (NUMA node 0)
+
+# Pin application to same NUMA node
+numactl --cpunodebind=0 --membind=0 ./my_application
+
+# Or use MPI with NUMA awareness
+mpirun --bind-to numa --map-by numa ./my_mpi_app
+```
+
+CPU Governor:
+```bash
+# Set CPU governor to performance (disable frequency scaling)
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo performance > $cpu
+done
+
+# Verify
+cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | sort -u
+# Should output: performance
+```
+
+### 2. RDMA Performance Tuning
+
+**Test RDMA Performance:**
+
+ib_write_bw (Bandwidth Test):
+```bash
+# Server side
+ib_write_bw -d mlx5_0 -a -F --report_gbits
+
+# Client side
+ib_write_bw -d mlx5_0 -a -F --report_gbits server-hostname
+
+# Expected results (HDR, 200 Gbps):
+# 200 Gbps (or close to it)
+
+# Test with different message sizes
+ib_write_bw -d mlx5_0 -s 8388608 -a -F --report_gbits server-hostname
+
+# Common message sizes: 64, 256, 1024, 4096, 8388608 (8MB)
+```
+
+ib_write_lat (Latency Test):
+```bash
+# Server
+ib_write_lat -d mlx5_0 -a -F
+
+# Client
+ib_write_lat -d mlx5_0 -a -F server-hostname
+
+# Expected results (HDR):
+# Typical latency: 0.5-0.7 μs
+
+# Test with different message sizes
+ib_write_lat -d mlx5_0 -s 64 -a -F server-hostname
+```
+
+ib_send_bw and ib_send_lat:
+```bash
+# Similar to write, but uses send/receive verbs
+# Slightly higher latency, but more representative of MPI
+
+# Server
+ib_send_bw -d mlx5_0 -a -F --report_gbits
+
+# Client
+ib_send_bw -d mlx5_0 -a -F --report_gbits server-hostname
+```
+
+**MPI Performance:**
+
+OSU Micro-Benchmarks:
+```bash
+# Install OSU benchmarks
+wget http://mvapich.cse.ohio-state.edu/download/mvapich/osu-micro-benchmarks-7.2.tar.gz
+tar xzf osu-micro-benchmarks-7.2.tar.gz
+cd osu-micro-benchmarks-7.2
+./configure CC=mpicc CXX=mpicxx
+make
+
+# Test point-to-point latency
+mpirun -np 2 -host node1,node2 ./mpi/pt2pt/osu_latency
+
+# Expected results (HDR):
+# 0 byte: ~0.7-1.0 μs
+# 4 KB: ~1.5 μs
+# 1 MB: ~10 μs
+
+# Test bandwidth
+mpirun -np 2 -host node1,node2 ./mpi/pt2pt/osu_bw
+
+# Expected results (HDR):
+# Large messages: ~23-24 GB/s (190-195 Gbps)
+
+# Collective benchmarks
+mpirun -np 16 ./mpi/collective/osu_allreduce
+mpirun -np 16 ./mpi/collective/osu_alltoall
+```
+
+**Optimize MPI Settings:**
+
+OpenMPI Configuration:
+```bash
+# Use UCX (Unified Communication X) for best performance
+mpirun --mca pml ucx --mca btl ^vader,tcp,openib \
+       -np 16 ./my_mpi_application
+
+# Tune UCX parameters
+export UCX_NET_DEVICES=mlx5_0:1  # Use specific IB device
+export UCX_IB_GID_INDEX=3        # RoCE GID index (if applicable)
+export UCX_TLS=rc,sm,self        # Transports: RC (reliable connection), SM (shared memory), self
+
+# Disable unnecessary transports
+export UCX_TLS=rc,sm,self
+export UCX_LOG_LEVEL=info  # For debugging
+
+# Example full command
+mpirun --mca pml ucx --mca btl ^vader,tcp,openib \
+       --bind-to core --map-by socket \
+       -x UCX_NET_DEVICES=mlx5_0:1 \
+       -x UCX_TLS=rc,sm,self \
+       -np 64 ./my_application
+```
+
+MVAPICH2 Configuration:
+```bash
+# MVAPICH2 optimized for InfiniBand
+export MV2_USE_CUDA=1  # If using GPUs
+export MV2_ENABLE_AFFINITY=1
+export MV2_CPU_BINDING_POLICY=scatter
+
+# Run application
+mpirun -np 64 -hostfile hosts.txt ./my_application
+```
+
+Intel MPI:
+```bash
+# Intel MPI with InfiniBand
+export I_MPI_FABRICS=shm:ofi
+export I_MPI_OFI_PROVIDER=psm3  # Or verbs
+export I_MPI_PIN_DOMAIN=auto
+
+mpiexec -n 64 -ppn 16 ./my_application
+```
+
+### 3. Advanced Features
+
+**GPUDirect RDMA:**
+
+Purpose: Direct data transfer between GPU and HCA (bypass CPU/memory)
+
+Benefits:
+- Lower latency (GPU to GPU)
+- Reduced CPU utilization
+- Higher bandwidth for GPU communication
+
+Requirements:
+- Nvidia GPU (Tesla, A100, H100)
+- Mellanox HCA (ConnectX-5 or newer)
+- GPUDirect-capable driver
+- CUDA-aware MPI
+
+Enable GPUDirect:
+```bash
+# Install Nvidia CUDA drivers
+# Install Mellanox OFED with GPU support
+./mlnxofedinstall --with-nvmf --enable-gds --add-kernel-support
+
+# Load nvidia-peermem module
+modprobe nvidia-peermem
+
+# Verify
+lsmod | grep nvidia_peermem
+
+# Test with CUDA-aware MPI
+mpirun -np 2 --mca pml ucx --mca btl ^openib \
+       -x UCX_TLS=rc,cuda_copy,cuda_ipc \
+       ./gpu_mpi_application
+```
+
+**SHARP (Scalable Hierarchical Aggregation and Reduction Protocol):**
+
+Purpose: In-network computing for collective operations
+
+Benefits:
+- Offload MPI collectives to switches
+- 5-10× faster Allreduce operations
+- Lower CPU utilization
+- Critical for large-scale ML training
+
+Requirements:
+- Mellanox switches with SHARP support (Quantum, SB7890)
+- ConnectX-5 or newer HCAs
+- SHARP-enabled MPI library
+
+Enable SHARP:
+```bash
+# Configure OpenSM for SHARP
+# Edit /etc/opensm/opensm.conf
+enable_sharp TRUE
+
+# Restart OpenSM
+systemctl restart opensm
+
+# Use SHARP with OpenMPI
+export HCOLL_ENABLE_SHARP=1
+export HCOLL_MAIN_IB=mlx5_0:1
+
+mpirun --mca coll_hcoll_enable 1 \
+       -x HCOLL_ENABLE_SHARP=1 \
+       -np 256 ./ml_training_app
+```
+
+**Adaptive Routing:**
+
+Purpose: Dynamic load balancing across multiple paths
+
+Benefits:
+- Utilizes all available bandwidth
+- Avoids congestion
+- Better for irregular traffic patterns
+
+Enable Adaptive Routing:
+```bash
+# Configure in OpenSM
+# Edit /etc/opensm/opensm.conf
+
+routing_engine ftree
+use_ucast_cache FALSE  # Disable cache for adaptive routing
+
+# Per-flow adaptive routing (ConnectX-5+)
+# Configured via mlxconfig
+
+mlxconfig -d /dev/mst/mt4119_pciconf0 set \
+  ADAPTIVE_ROUTING_ENABLE=1
+
+# Verify
+mlxconfig -d /dev/mst/mt4119_pciconf0 q | grep ADAPTIVE
+```
+
+**Congestion Control:**
+
+InfiniBand includes hardware-based congestion control:
+```bash
+# Enable Credit Control (default)
+# Already enabled in most configurations
+
+# View congestion counters
+perfquery -x <LID> <port>
+
+# Look for:
+# symbol_error_counter
+# link_error_recovery_counter
+# link_downed_counter
+# port_rcv_constraint_errors
+# excessive_buffer_overrun_errors
+
+# Zero counters indicate healthy fabric
+```
+
+InfiniBand Monitoring and Diagnostics
+--------------------------------------
+
+### 1. Basic Diagnostics
+
+**ibstat - Quick Status Check:**
+
+```bash
+# Show all HCAs
+ibstat
+
+# Output example:
+# CA 'mlx5_0'
+#         CA type: MT4123
+#         Number of ports: 1
+#         Firmware version: 20.35.1012
+#         Hardware version: 0
+#         Node GUID: 0x506b4b0300e7d4c0
+#         System image GUID: 0x506b4b0300e7d4c0
+#         Port 1:
+#                 State: Active
+#                 Physical state: LinkUp
+#                 Rate: 200 Gbps (HDR)
+#                 Base lid: 18
+#                 LMC: 0
+#                 SM lid: 1
+#                 Capability mask: 0x2659e848
+#                 Port GUID: 0x506b4b0300e7d4c1
+#                 Link layer: InfiniBand
+
+# Check specific HCA
+ibstat mlx5_0
+```
+
+Key Fields:
+- State: Should be "Active"
+- Physical state: Should be "LinkUp"
+- Rate: Link speed (200 Gbps for HDR)
+- SM lid: Subnet Manager LID (should be present)
+
+**ibstatus - Simplified Status:**
+
+```bash
+# Show status of all IB devices
+ibstatus
+
+# Output:
+# Infiniband device 'mlx5_0' port 1 status:
+#         default gid:     fe80:0000:0000:0000:506b:4b03:00e7:d4c1
+#         base lid:        0x12
+#         sm lid:          0x1
+#         state:           4: ACTIVE
+#         phys state:      5: LinkUp
+#         rate:            200 Gb/sec (HDR)
+#         link_layer:      InfiniBand
+```
+
+**ibv_devinfo - Detailed Device Info:**
+
+```bash
+# Show detailed information
+ibv_devinfo
+
+# Or specific device
+ibv_devinfo -d mlx5_0
+
+# Output includes:
+# - Device capabilities
+# - Maximum message sizes
+# - GID table
+# - Memory registration details
+```
+
+### 2. Network Discovery and Topology
+
+**ibnetdiscover - Discover Fabric:**
+
+```bash
+# Discover entire fabric
+ibnetdiscover
+
+# Output shows:
+# - All switches
+# - All HCAs
+# - Connections between devices
+# - LIDs, GUIDs, speeds
+
+# Save to file
+ibnetdiscover > fabric_topology.txt
+
+# Generate topology diagram
+ibnetdiscover -g > topology.dot
+dot -Tpng topology.dot -o topology.png
+```
+
+**ibdiagnet - Comprehensive Diagnostics:**
+
+```bash
+# Run full diagnostic scan
+ibdiagnet
+
+# Checks:
+# - Topology discovery
+# - Link health
+# - Routing tables
+# - Error counters
+# - Speed/width issues
+# - Duplicated GUIDs
+# - Subnet Manager status
+
+# Output saved to:
+# - ibdiagnet2.db_csv (database)
+# - ibdiagnet2.log (detailed log)
+# - ibdiagnet2.lst (summary)
+# - ibdiagnet2.net (topology)
+
+# Check for specific issues
+ibdiagnet -r  # Skip routes check (faster)
+ibdiagnet -P all=1  # Run all checks at PM level 1
+```
+
+**iblinkinfo - Link Information:**
+
+```bash
+# Show all links in fabric
+iblinkinfo
+
+# Output format:
+# <CA/Switch> <port> <speed> <state> ==> <peer> <peer_port>
+
+# Example output:
+# Switch 0x506b4b03009c3920 "SwitchIB Mellanox Technologies":
+#  1  100G[  4x  HDR ] Active/  LinkUp ==> 0x506b4b0300e7d4c0  1 "node01 HCA-1"
+#  2  100G[  4x  HDR ] Active/  LinkUp ==> 0x506b4b0300e7d5c0  1 "node02 HCA-1"
+
+# Filter for specific speed
+iblinkinfo | grep FDR
+iblinkinfo | grep "   50G"  # HDR at 50 Gbps per lane
+
+# Check for degraded links
+iblinkinfo | grep -v "4x"  # Should show no 1x or 2x links
+```
+
+### 3. Performance Monitoring
+
+**perfquery - Performance Counters:**
+
+```bash
+# Query port counters
+perfquery -x <LID> <port>
+
+# Example:
+perfquery -x 18 1
+
+# Key counters:
+# port_xmit_data: Bytes transmitted
+# port_rcv_data: Bytes received
+# port_xmit_pkts: Packets transmitted
+# port_rcv_pkts: Packets received
+# symbol_error_counter: Physical errors
+# link_error_recovery_counter: Link recovery events
+# excessive_buffer_overrun_errors: Buffer overruns
+
+# Extended counters (more detail)
+perfquery -x -E <LID> <port>
+
+# Reset counters (after noting baseline)
+perfquery -R <LID> <port>
+```
+
+Interpret Counters:
+```
+Good (zero or very low):
+- symbol_error_counter
+- link_error_recovery_counter
+- link_downed_counter
+- port_rcv_errors
+- excessive_buffer_overrun_errors
+
+Informational:
+- port_xmit_data / port_rcv_data: Traffic volume
+- port_xmit_pkts / port_rcv_pkts: Packet count
+
+Bad (if increasing):
+- Any error counter
+- Buffer overruns (congestion)
+- Link recovery (physical issues)
+```
+
+**Continuous Monitoring Script:**
+
+```bash
+#!/bin/bash
+# monitor_ib.sh - Monitor InfiniBand performance
+
+LOG_FILE="/var/log/ib_monitor.log"
+INTERVAL=60  # seconds
+
+while true; do
+    echo "=== $(date) ===" >> $LOG_FILE
+
+    # Check HCA status
+    ibstat | grep -E "(State|Rate)" >> $LOG_FILE
+
+    # Check for errors on all ports
+    for lid in $(iblinkinfo -l | awk '{print $3}'); do
+        perfquery -x $lid 1 2>/dev/null | \
+        grep -E "error|recovery|overrun" | \
+        grep -v ": 0$" >> $LOG_FILE
+    done
+
+    sleep $INTERVAL
+done
+```
+
+**ibqueryerrors - Find Errors:**
+
+```bash
+# Query all error counters across fabric
+ibqueryerrors
+
+# Output shows only ports with errors
+# Example:
+# Errors for "Switch 0x506b4b03009c3920 SwitchIB":
+#   Port 5: [SymbolErrors == 12]
+
+# Clear errors after investigation
+ibqueryerrors -K  # Clear counters
+
+# Run with extended counters
+ibqueryerrors -e
+```
+
+### 4. Troubleshooting Common Issues
+
+**Link Not Coming Up:**
+
+Check Physical Connection:
+```bash
+# 1. Verify cable connected
+ibstat | grep "Physical state"
+# Should show: LinkUp
+
+# If shows: Polling, Disabled, or Down
+# - Check cable connections
+# - Try different cable
+# - Check port is enabled
+
+# 2. Check both ends
+# On both nodes, run:
+ibstat
+
+# 3. Check switch port (if connected to switch)
+# Access switch management and verify port enabled
+```
+
+Check Link Speed:
+```bash
+# Verify expected speed
+iblinkinfo | grep node01
+
+# If speed lower than expected (e.g., FDR instead of HDR):
+# - Check cable type (passive vs. active)
+# - Check cable length
+# - Check HCA capabilities
+# - Check switch port capabilities
+```
+
+**High Latency:**
+
+Diagnose:
+```bash
+# Test latency
+ib_write_lat -a server-hostname
+
+# If latency higher than expected:
+# 1. Check CPU frequency scaling
+cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+# 2. Check for CPU migrations
+# Pin to specific cores
+
+# 3. Check NUMA configuration
+numactl --hardware
+
+# 4. Check for congestion
+perfquery -x -E <LID> <port> | grep overrun
+
+# 5. Check routing
+# Suboptimal routes can increase latency
+```
+
+**Packet Drops / Errors:**
+
+```bash
+# Find ports with errors
+ibqueryerrors -s
+
+# Check specific port
+perfquery -x <LID> <port>
+
+# Common causes:
+# - Bad cable (symbol errors)
+# - EMI interference (symbol errors)
+# - Congestion (buffer overruns)
+# - Faulty HCA or switch port
+
+# Solutions:
+# - Replace cable
+# - Move cable away from power sources
+# - Reduce traffic or increase bandwidth
+# - Replace faulty hardware
+```
+
+**Subnet Manager Issues:**
+
+```bash
+# Check if SM is running
+ibstat | grep "SM lid"
+
+# Should show SM lid (usually 1)
+# If shows: 0, no SM is active
+
+# Check OpenSM status
+systemctl status opensm
+
+# View OpenSM logs
+journalctl -u opensm -f
+
+# Manually start SM
+opensm -g <HCA_GUID>
+
+# Check for multiple SMs
+ibnetdiscover | grep SM
+# Should show primary SM and standbys
+```
+
+InfiniBand Best Practices Summary
+----------------------------------
+
+### Design and Planning
+- [ ] Choose appropriate InfiniBand generation (EDR, HDR, NDR)
+- [ ] Design fat-tree topology with 1:1 or 2:1 oversubscription
+- [ ] Plan for redundant Subnet Managers
+- [ ] Document fabric topology
+- [ ] Calculate required bandwidth and port count
+- [ ] Plan cable runs and lengths
+- [ ] Select appropriate cables (DAC for short, AOC/fiber for long)
+- [ ] Consider future growth in design
+
+### Deployment
+- [ ] Install latest OFED drivers
+- [ ] Update HCA and switch firmware
+- [ ] Configure OpenSM with appropriate routing engine (ftree)
+- [ ] Deploy multiple Subnet Managers for redundancy
+- [ ] Configure IPoIB in connected mode
+- [ ] Set MTU to 65520 for IPoIB
+- [ ] Enable adaptive routing (if supported)
+- [ ] Document all device GUIDs and LIDs
+
+### Optimization
+- [ ] Verify PCIe Gen4 x16 for HDR/NDR HCAs
+- [ ] Set CPU governor to performance
+- [ ] Pin applications to NUMA node matching HCA
+- [ ] Disable CPU frequency scaling
+- [ ] Enable GPUDirect RDMA (for GPU workloads)
+- [ ] Configure SHARP (for large-scale MPI)
+- [ ] Optimize MPI settings (UCX, process binding)
+- [ ] Test and benchmark performance
+
+### Monitoring
+- [ ] Monitor error counters regularly
+- [ ] Set up automated monitoring scripts
+- [ ] Log performance metrics
+- [ ] Alert on link down events
+- [ ] Alert on error counter increases
+- [ ] Monitor SM failover events
+- [ ] Track bandwidth utilization
+- [ ] Review logs weekly
+
+### Maintenance
+- [ ] Keep firmware and drivers updated
+- [ ] Replace degraded cables promptly
+- [ ] Test failover procedures
+- [ ] Document configuration changes
+- [ ] Maintain spare parts inventory (cables, HCAs)
+- [ ] Train staff on InfiniBand operations
+- [ ] Schedule regular fabric health checks
+
+Documentation References
+------------------------
+
+[1] InfiniBand Trade Association. (2024). InfiniBand Architecture Specification.
+    https://www.infinibandta.org/
+    Official InfiniBand specification and standards.
+
+[2] Nvidia/Mellanox. (2024). Mellanox OFED Documentation.
+    https://docs.nvidia.com/networking/display/MLNXOFEDv24010331/
+    OFED installation and configuration guide.
+
+[3] Nvidia/Mellanox. (2024). ConnectX-6 User Manual.
+    https://docs.nvidia.com/networking/
+    HCA configuration and optimization.
+
+[4] OpenFabrics Alliance. (2024). OpenFabrics Software Documentation.
+    https://www.openfabrics.org/
+    RDMA programming and software stack.
+
+[5] OpenSM Documentation.
+    https://github.com/linux-rdma/opensm
+    Subnet Manager configuration and operation.
+
+[6] Liu, J., et al. (2015). High-Performance RDMA-Based MPI Implementations.
+    Modern Accelerator Technologies for Geographic Information Science.
+    RDMA and MPI performance optimization.
+
+[7] Sur, S., et al. (2010). RDMA Read Based Rendezvous Protocol for MPI.
+    High Performance Computing (HiPC).
+    RDMA protocol details and performance.
+
+[8] Shamis, P., et al. (2015). UCX: An Open Source Framework for HPC Network APIs.
+    IEEE Conference on High Performance Extreme Computing.
+    UCX architecture and usage.
+
+[9] Nvidia. (2024). SHARP - Scalable Hierarchical Aggregation Protocol.
+    https://docs.nvidia.com/networking/
+    In-network computing for MPI collectives.
+
+[10] Nvidia. (2024). GPUDirect RDMA Documentation.
+     https://docs.nvidia.com/cuda/gpudirect-rdma/
+     GPU direct memory access over InfiniBand.
+
+[11] Ohio State University. (2024). OSU Micro-Benchmarks.
+     https://mvapich.cse.ohio-state.edu/benchmarks/
+     MPI performance testing suite.
+
+[12] TOP500. (2024). InfiniBand Statistics.
+     https://www.top500.org/statistics/
+     InfiniBand adoption in supercomputers.
+
+[13] Lawrence Livermore National Laboratory. (2024). HPC Tutorials.
+     https://hpc.llnl.gov/documentation/tutorials
+     HPC networking and InfiniBand guides.
+
+[14] Panda, D. K., et al. (2018). High-Performance Computing Networking.
+     Morgan Kaufmann. ISBN: 978-0128041987
+     Comprehensive HPC networking textbook.
+
+[15] Nvidia. (2024). InfiniBand vs. Ethernet for HPC and AI.
+     Technical white papers on performance comparisons.
+
+Summary
+-------
+
+InfiniBand remains the premier interconnect technology for high-performance computing and AI/ML workloads:
+
+**Key Advantages:**
+
+1. **Latency**: Sub-microsecond latency (0.5-0.7 μs) unmatched by alternatives
+2. **Bandwidth**: Up to 400 Gbps (NDR), 800 Gbps (XDR) on roadmap
+3. **RDMA Native**: Hardware-accelerated, CPU offload, zero-copy
+4. **Lossless**: Credit-based flow control eliminates packet loss
+5. **Scalability**: Proven at thousands of nodes in production
+6. **Quality of Service**: Hardware-based traffic prioritization
+
+**When to Choose InfiniBand:**
+
+Ideal For:
+- Supercomputing and HPC clusters
+- Large-scale AI/ML training (distributed GPUs)
+- High-performance parallel storage
+- Financial trading (ultra-low latency)
+- Scientific research requiring tightly-coupled compute
+
+Consider Alternatives When:
+- Budget constrained (RoCE on Ethernet less expensive)
+- Moderate performance requirements (<25G)
+- Existing Ethernet infrastructure (RoCE)
+- Small deployments (<50 nodes)
+
+**Technology Maturity:**
+
+InfiniBand is a mature, proven technology:
+- 20+ years in production
+- Dominant in TOP500 supercomputers (>60%)
+- Extensive software ecosystem (OFED, MPI, storage protocols)
+- Active development (NDR/XDR generations)
+- Strong vendor support (Nvidia/Mellanox)
+
+**Future Outlook:**
+
+InfiniBand continues to evolve:
+- NDR (400G) shipping in volume
+- XDR (800G) on roadmap
+- Integration with CXL (Compute Express Link)
+- Enhanced GPUDirect capabilities
+- Continued optimization for AI/ML workloads
+
+For organizations with demanding performance requirements, InfiniBand remains the gold standard for high-performance networking. Proper design, deployment, and optimization ensure maximum return on investment and application performance.

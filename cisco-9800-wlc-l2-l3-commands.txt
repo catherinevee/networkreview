@@ -1,0 +1,927 @@
+Cisco 9800 Wireless LAN Controller CLI Commands for Layer 2 and Layer 3 Configuration
+====================================================================================
+
+This document provides common Cisco 9800 Series Wireless LAN Controller (WLC) CLI commands for configuring Layer 2 and Layer 3 functionality. The 9800 WLC runs IOS-XE and uses traditional IOS-XE CLI syntax.
+
+Basic CLI Navigation
+--------------------
+
+# Enter privileged EXEC mode
+enable
+
+# Enter global configuration mode
+configure terminal
+
+# Exit configuration mode
+exit
+end
+
+# Show running configuration
+show running-config
+
+# Show wireless-specific configuration
+show running-config | section wireless
+
+# Save configuration
+write memory
+copy running-config startup-config
+
+# Show command history
+show history
+
+Wireless LAN Controller Basics
+-------------------------------
+
+### Initial Setup
+
+# Set hostname
+hostname WLC-9800-01
+
+# Configure management interface
+interface GigabitEthernet0/0/0
+ description Management Interface
+ ip address 10.0.0.10 255.255.255.0
+ no shutdown
+
+# Configure default gateway
+ip route 0.0.0.0 0.0.0.0 10.0.0.1
+
+# Configure DNS
+ip name-server 8.8.8.8 8.8.4.4
+
+# Configure NTP
+ntp server 0.pool.ntp.org
+clock timezone EST -5 0
+
+commit
+
+### Wireless Management Interface
+
+# Configure wireless management interface
+wireless management interface Vlan1
+
+# Show wireless management interface
+show wireless management interface
+
+Layer 2 Configuration
+---------------------
+
+### VLAN Configuration
+
+# Create VLAN for wireless clients
+vlan 100
+ name EMPLOYEE-WIRELESS
+
+vlan 200
+ name GUEST-WIRELESS
+
+vlan 300
+ name IOT-WIRELESS
+
+# Show VLANs
+show vlan brief
+
+### Interface Configuration for Access Points
+
+# Configure trunk interface to access point
+interface TenGigabitEthernet0/0/1
+ description Trunk to Access Point
+ switchport mode trunk
+ switchport trunk allowed vlan 1,100,200,300
+ switchport trunk native vlan 1
+ spanning-tree portfast trunk
+ no shutdown
+
+# Configure access port (if needed)
+interface GigabitEthernet0/0/2
+ description Access Port to AP
+ switchport mode access
+ switchport access vlan 100
+ spanning-tree portfast
+ no shutdown
+
+### Port-Channel (LAG) Configuration
+
+# Configure port-channel for AP uplinks
+interface Port-Channel1
+ description EtherChannel to Distribution
+ switchport mode trunk
+ switchport trunk allowed vlan 1,100,200,300
+ no shutdown
+
+interface range TenGigabitEthernet0/0/10-11
+ description Member of Port-Channel1
+ channel-group 1 mode active
+ no shutdown
+
+# Show EtherChannel status
+show etherchannel summary
+show etherchannel port-channel
+
+### FlexConnect (Hybrid Remote Access Point Management)
+
+# Configure FlexConnect VLAN mapping
+wireless profile flex FLEXCONNECT-PROFILE
+ description FlexConnect Profile for Remote Sites
+ native-vlan-id 1
+ vlan-name default vlan-id 1
+ vlan-name EMPLOYEE vlan-id 100
+ vlan-name GUEST vlan-id 200
+
+# Show FlexConnect configuration
+show wireless profile flex summary
+
+### Spanning Tree Configuration
+
+# Configure spanning tree mode
+spanning-tree mode rapid-pvst
+
+# Configure bridge priority for VLAN
+spanning-tree vlan 100 priority 4096
+
+# Configure portfast on access ports
+interface range GigabitEthernet0/0/1-24
+ spanning-tree portfast
+
+# Show spanning tree status
+show spanning-tree
+show spanning-tree summary
+
+Layer 3 Configuration
+---------------------
+
+### SVI (Switched Virtual Interface) Configuration
+
+# Configure VLAN interface for wireless management
+interface Vlan1
+ description Management VLAN
+ ip address 10.0.0.10 255.255.255.0
+ no shutdown
+
+# Configure VLAN interface for employee wireless
+interface Vlan100
+ description Employee Wireless Gateway
+ ip address 10.100.0.1 255.255.255.0
+ ip helper-address 10.0.0.50
+ no shutdown
+
+# Configure VLAN interface for guest wireless
+interface Vlan200
+ description Guest Wireless Gateway
+ ip address 10.200.0.1 255.255.255.0
+ ip helper-address 10.0.0.50
+ no shutdown
+
+# Configure VLAN interface for IoT wireless
+interface Vlan300
+ description IoT Wireless Gateway
+ ip address 10.300.0.1 255.255.255.0
+ ip helper-address 10.0.0.50
+ no shutdown
+
+# Show interface status
+show ip interface brief
+
+### Static Routes
+
+# Configure default route
+ip route 0.0.0.0 0.0.0.0 10.0.0.1
+
+# Configure specific routes
+ip route 192.168.0.0 255.255.0.0 10.0.0.254
+
+# Show routing table
+show ip route
+show ip route static
+
+### Dynamic Routing - OSPF
+
+# Enable OSPF
+router ospf 1
+ router-id 10.0.0.10
+ network 10.0.0.0 0.0.0.255 area 0
+ network 10.100.0.0 0.0.255.255 area 0
+ passive-interface Vlan100
+ passive-interface Vlan200
+ passive-interface Vlan300
+
+# Show OSPF information
+show ip ospf neighbor
+show ip ospf interface
+show ip ospf database
+
+### DHCP Configuration
+
+# Configure DHCP pool for employee wireless
+ip dhcp excluded-address 10.100.0.1 10.100.0.10
+
+ip dhcp pool EMPLOYEE-POOL
+ network 10.100.0.0 255.255.255.0
+ default-router 10.100.0.1
+ dns-server 8.8.8.8 8.8.4.4
+ lease 1 0 0
+ domain-name company.com
+
+# Configure DHCP pool for guest wireless
+ip dhcp excluded-address 10.200.0.1 10.200.0.10
+
+ip dhcp pool GUEST-POOL
+ network 10.200.0.0 255.255.255.0
+ default-router 10.200.0.1
+ dns-server 8.8.8.8 8.8.4.4
+ lease 0 8 0
+ domain-name guest.company.com
+
+# Show DHCP bindings
+show ip dhcp binding
+show ip dhcp pool
+
+# Configure DHCP relay (IP helper)
+interface Vlan100
+ ip helper-address 10.0.0.50
+
+### Access Control Lists
+
+# Configure ACL for guest network isolation
+ip access-list extended GUEST-ACL
+ remark Allow DNS
+ permit udp any any eq domain
+ remark Allow DHCP
+ permit udp any eq bootpc any eq bootps
+ remark Allow Internet access
+ permit ip 10.200.0.0 0.0.255.255 any
+ remark Deny access to internal networks
+ deny ip 10.200.0.0 0.0.255.255 10.0.0.0 0.255.255.255
+ deny ip 10.200.0.0 0.0.255.255 172.16.0.0 0.15.255.255
+ deny ip 10.200.0.0 0.0.255.255 192.168.0.0 0.0.255.255
+
+# Apply ACL to interface
+interface Vlan200
+ ip access-group GUEST-ACL in
+
+# Show ACL
+show ip access-lists GUEST-ACL
+show ip interface Vlan200
+
+Wireless Configuration
+----------------------
+
+### Wireless Profile Configuration
+
+# Configure wireless profile policy
+wireless profile policy EMPLOYEE-POLICY
+ description Employee Wireless Policy
+ vlan EMPLOYEE-WIRELESS
+ no shutdown
+
+wireless profile policy GUEST-POLICY
+ description Guest Wireless Policy
+ vlan GUEST-WIRELESS
+ no central-switching
+ no shutdown
+
+wireless profile policy IOT-POLICY
+ description IoT Device Policy
+ vlan IOT-WIRELESS
+ no shutdown
+
+# Show wireless policies
+show wireless profile policy summary
+show wireless profile policy detailed EMPLOYEE-POLICY
+
+### WLAN Configuration (SSID)
+
+# Configure employee WLAN with WPA3-Enterprise
+wlan EMPLOYEE-SSID 1 EMPLOYEE-SSID
+ description Employee Wireless Network
+ security wpa akm dot1x
+ security wpa wpa3
+ security wpa akm ft dot1x
+ security ft adaptive
+ no security wpa wpa2
+ no shutdown
+
+# Configure guest WLAN with WPA2-PSK
+wlan GUEST-SSID 2 GUEST-SSID
+ description Guest Wireless Network
+ security wpa psk set-key ascii 0 GuestPassword123!
+ security wpa akm psk
+ security wpa wpa2
+ no security wpa wpa3
+ no shutdown
+
+# Configure IoT WLAN with WPA2-PSK
+wlan IOT-SSID 3 IOT-SSID
+ description IoT Device Network
+ security wpa psk set-key ascii 0 IoTSecure456!
+ security wpa akm psk
+ security wpa wpa2
+ broadcast-ssid
+ no shutdown
+
+# Bind WLAN to policy profile
+wlan EMPLOYEE-SSID 1 EMPLOYEE-SSID
+ policy-profile EMPLOYEE-POLICY
+
+wlan GUEST-SSID 2 GUEST-SSID
+ policy-profile GUEST-POLICY
+
+wlan IOT-SSID 3 IOT-SSID
+ policy-profile IOT-POLICY
+
+# Show WLAN configuration
+show wlan summary
+show wlan name EMPLOYEE-SSID
+show wlan all
+
+### AP Join Profile
+
+# Configure AP join profile
+wireless profile ap-join-profile AP-JOIN-DEFAULT
+ description Default AP Join Profile
+ aaa-override
+
+# Show AP join profile
+show wireless profile ap-join-profile summary
+
+### RF Profile Configuration
+
+# Configure RF profile for 2.4GHz
+wireless profile rf 24GHZ-RF-PROFILE
+ description 2.4GHz RF Profile
+ band 2.4ghz
+ channel-width 20
+ tx-power min 8
+ tx-power max 20
+ no shutdown
+
+# Configure RF profile for 5GHz
+wireless profile rf 5GHZ-RF-PROFILE
+ description 5GHz RF Profile
+ band 5ghz
+ channel-width 40
+ tx-power min 8
+ tx-power max 23
+ no shutdown
+
+# Show RF profile
+show wireless profile rf summary
+
+### AP Tag Configuration
+
+# Configure AP tag (policy tag)
+wireless tag policy DEFAULT-POLICY-TAG
+ description Default Policy Tag
+ wlan EMPLOYEE-SSID policy EMPLOYEE-POLICY
+ wlan GUEST-SSID policy GUEST-POLICY
+ wlan IOT-SSID policy IOT-POLICY
+
+# Configure site tag
+wireless tag site DEFAULT-SITE-TAG
+ description Default Site Tag
+ ap-join-profile AP-JOIN-DEFAULT
+ flex-profile FLEXCONNECT-PROFILE
+ local-site
+
+# Configure RF tag
+wireless tag rf DEFAULT-RF-TAG
+ description Default RF Tag
+ 2.4ghz-rf-policy 24GHZ-RF-PROFILE
+ 5ghz-rf-policy 5GHZ-RF-PROFILE
+
+# Show tag configuration
+show wireless tag policy summary
+show wireless tag site summary
+show wireless tag rf summary
+
+### Access Point Configuration
+
+# Configure AP manually (if not using tags)
+ap name AP-001
+ location "Building A Floor 1"
+ country US
+ priority 1
+ led-state enable
+ no shutdown
+
+# Configure AP Ethernet interface
+ap name AP-001
+ ethernet 0
+  duplex auto
+  speed auto
+  shutdown
+
+# Apply tags to AP
+ap name AP-001
+ policy-tag DEFAULT-POLICY-TAG
+ site-tag DEFAULT-SITE-TAG
+ rf-tag DEFAULT-RF-TAG
+
+# Configure AP mode (local, FlexConnect, sniffer, etc.)
+ap name AP-001
+ mode local
+
+# Show AP configuration
+show ap name AP-001 config general
+show ap summary
+show ap join stats summary
+
+### Radio Configuration
+
+# Configure 2.4GHz radio on AP
+ap name AP-001
+ dot11 24ghz
+  radio role client-serving
+  channel 6
+  txpower 14
+  no shutdown
+
+# Configure 5GHz radio on AP
+ap name AP-001
+ dot11 5ghz
+  radio role client-serving
+  channel 36
+  txpower 17
+  no shutdown
+
+# Show radio status
+show ap dot11 24ghz summary
+show ap dot11 5ghz summary
+
+### AAA/RADIUS Configuration
+
+# Configure RADIUS server for authentication
+radius server ISE-PRIMARY
+ address ipv4 10.0.0.100 auth-port 1812 acct-port 1813
+ key 0 RadiusSharedSecret123
+
+radius server ISE-SECONDARY
+ address ipv4 10.0.0.101 auth-port 1812 acct-port 1813
+ key 0 RadiusSharedSecret123
+
+# Configure AAA
+aaa new-model
+
+aaa group server radius ISE-SERVERS
+ server name ISE-PRIMARY
+ server name ISE-SECONDARY
+
+aaa authentication dot1x default group ISE-SERVERS
+aaa authorization network default group ISE-SERVERS
+aaa accounting dot1x default start-stop group ISE-SERVERS
+
+# Show AAA configuration
+show aaa servers
+show radius server-group all
+
+### Mobility Configuration (Controller HA/SSO)
+
+# Configure mobility group
+wireless mobility controller peer-group MOBILITY-GROUP
+ member ip 10.0.0.11 public-ip 203.0.113.11
+ member ip 10.0.0.12 public-ip 203.0.113.12
+
+wireless mobility group name CAMPUS-MOBILITY
+ multicast-mode unicast
+
+# Show mobility configuration
+show wireless mobility summary
+show wireless mobility controller
+
+### Client QoS Configuration
+
+# Configure QoS profile
+wireless profile qos QOS-PROFILE-PLATINUM
+ wmm
+ dot11a voice-max-bandwidth 50
+ dot11a video-max-bandwidth 50
+ dot11g voice-max-bandwidth 50
+ dot11g video-max-bandwidth 50
+
+# Apply QoS to policy profile
+wireless profile policy EMPLOYEE-POLICY
+ qos-profile QOS-PROFILE-PLATINUM
+
+# Show QoS configuration
+show wireless profile qos summary
+
+### Roaming (Fast Transition)
+
+# Configure Fast Transition (802.11r)
+wireless profile policy EMPLOYEE-POLICY
+ security ft
+ security ft reassociation-timeout 20
+ security ft over-the-ds enable
+
+# Show FT configuration
+show wireless profile policy detailed EMPLOYEE-POLICY
+
+### Band Select
+
+# Configure band select (prefer 5GHz)
+wireless profile policy EMPLOYEE-POLICY
+ band-select
+
+# Show band select status
+show wireless band-select
+
+### Load Balancing
+
+# Configure load balancing
+wireless load-balancing
+ window 5
+ denial 3
+
+# Show load balancing
+show wireless load-balancing
+
+### Client Exclusion Policy
+
+# Configure client exclusion
+wireless exclusionlist
+ timeout 60
+
+# Show excluded clients
+show wireless exclusionlist
+
+### Rogue AP Detection
+
+# Configure rogue AP detection
+wireless wps rogue ap classify friendly state alert
+
+# Show rogue APs
+show wireless wps rogue ap summary
+
+Advanced Features
+-----------------
+
+### Application Visibility and Control (AVC)
+
+# Configure application visibility
+wireless avc profile AVC-PROFILE
+ rule application youtube
+  action drop
+ rule application netflix
+  action mark dscp af31
+
+# Apply AVC profile to policy
+wireless profile policy GUEST-POLICY
+ avc-profile AVC-PROFILE
+
+# Show AVC statistics
+show wireless avc
+
+### Client Traffic Steering
+
+# Configure client steering (Optimized Roaming)
+wireless profile policy EMPLOYEE-POLICY
+ assisted-roaming dual-band prediction-rssi-threshold -70
+
+# Show client steering
+show wireless client mac <mac-address> detail
+
+### mDNS Gateway (Bonjour)
+
+# Configure mDNS gateway
+mdns-sd gateway
+ service-definition AirPlay
+  service-type _airplay._tcp.local
+ service-list MDNS-SERVICES
+  match location ALL
+  match service-definition AirPlay
+
+# Apply mDNS to interface
+interface Vlan100
+ mdns-sd gateway
+ mdns-sd service-list MDNS-SERVICES IN OUT
+
+# Show mDNS services
+show mdns-sd summary
+
+### Umbrella (OpenDNS) Integration
+
+# Configure Umbrella
+wireless profile policy GUEST-POLICY
+ umbrella
+ umbrella mode-dhcp
+ umbrella dnscrypt enable
+
+# Show Umbrella status
+show wireless profile policy detailed GUEST-POLICY
+
+### Local Profiling
+
+# Configure local profiling for device classification
+device-sensor filter-list dhcp list DHCP-PROFILING
+ option name host-name
+ option name requested-address
+ option name parameter-request-list
+
+device-sensor filter-list cdp list CDP-PROFILING
+ tlv name device-name
+ tlv name capabilities-type
+
+device-sensor filter-list lldp list LLDP-PROFILING
+ tlv name system-name
+ tlv name system-capabilities
+
+# Show device classification
+show device-classifier profile all
+
+### Netflow Configuration
+
+# Configure Netflow for wireless traffic analysis
+flow exporter NETFLOW-EXPORTER
+ destination 10.0.0.200
+ source Vlan1
+ transport udp 2055
+
+flow record NETFLOW-RECORD
+ match ipv4 source address
+ match ipv4 destination address
+ collect counter bytes
+ collect counter packets
+
+flow monitor NETFLOW-MONITOR
+ record NETFLOW-RECORD
+ exporter NETFLOW-EXPORTER
+
+# Apply Netflow to wireless interface
+interface Vlan100
+ ip flow monitor NETFLOW-MONITOR input
+ ip flow monitor NETFLOW-MONITOR output
+
+# Show Netflow statistics
+show flow monitor NETFLOW-MONITOR cache
+
+### Web Authentication (Guest Portal)
+
+# Configure web authentication
+wireless profile policy GUEST-POLICY
+ security web-auth
+ security web-auth authentication-list default
+ security web-auth parameter-map global
+
+# Configure parameter map for web auth
+parameter-map type webauth global
+ type webauth
+ virtual-ip ipv4 192.0.2.1
+
+# Show web authentication sessions
+show wireless client mac <mac-address> detail
+
+Verification and Troubleshooting Commands
+------------------------------------------
+
+### Wireless Client Verification
+
+# Show all wireless clients
+show wireless client summary
+show wireless client calls
+
+# Show specific client by MAC address
+show wireless client mac-address <MAC>
+show wireless client mac-address <MAC> detail
+
+# Show clients on specific WLAN
+show wireless client wlan EMPLOYEE-SSID
+
+# Show client statistics
+show wireless client statistics
+
+### Access Point Verification
+
+# Show all APs
+show ap summary
+show ap name AP-001 config general
+show ap name AP-001 status
+
+# Show AP join statistics
+show ap join stats summary all
+
+# Show AP image status
+show ap image all
+
+# Show AP CDP neighbors
+show ap cdp neighbors
+
+# Show AP Ethernet interface
+show ap name AP-001 ethernet 0 statistics
+
+# Show AP memory and CPU
+show ap name AP-001 tech-support
+
+### Radio and RF Verification
+
+# Show RF profile status
+show wireless profile rf summary
+show wireless profile rf detailed 5GHZ-RF-PROFILE
+
+# Show radio statistics
+show ap dot11 24ghz summary
+show ap dot11 5ghz summary
+show ap name AP-001 dot11 24ghz stats
+
+# Show channel assignment
+show ap rf-profile summary
+
+# Show Cleanair (spectrum analysis) if available
+show ap name AP-001 auto-rf 24ghz
+show ap name AP-001 auto-rf 5ghz
+
+### WLAN and Policy Verification
+
+# Show WLAN configuration
+show wlan summary
+show wlan name EMPLOYEE-SSID
+show wlan all
+
+# Show policy profiles
+show wireless profile policy summary
+show wireless profile policy detailed EMPLOYEE-POLICY
+
+# Show tag mappings
+show wireless tag policy detailed DEFAULT-POLICY-TAG
+show wireless tag site detailed DEFAULT-SITE-TAG
+
+### Mobility Verification
+
+# Show mobility status
+show wireless mobility summary
+show wireless mobility controller
+show wireless mobility multicast
+
+# Show roaming history
+show wireless client mac-address <MAC> mobility
+
+### AAA and Authentication Verification
+
+# Show AAA server status
+show aaa servers
+show radius server-group all
+
+# Show authentication sessions
+show authentication sessions
+show authentication sessions interface Vlan100
+
+### System Information
+
+# Show system information
+show version
+show inventory
+show redundancy
+
+# Show system resources
+show processes cpu sorted
+show processes memory sorted
+show platform software status control-processor brief
+
+# Show wireless summary
+show wireless summary
+show wireless stats
+
+# Show logging
+show logging
+show logging | include CAPWAP
+
+### Troubleshooting Commands
+
+# Debug wireless client
+debug wireless client <MAC>
+
+# Debug CAPWAP (AP to WLC communication)
+debug capwap events enable
+debug capwap errors enable
+
+# Debug AAA
+debug aaa authentication
+debug radius
+
+# Clear commands
+clear wireless client mac-address <MAC>
+clear wireless stats
+clear ap config AP-001
+
+# Show tech support
+show tech-support wireless
+
+# Test connectivity
+ping 8.8.8.8
+traceroute 8.8.8.8
+
+High Availability (Redundancy)
+-------------------------------
+
+### HA SSO Configuration
+
+# Configure redundancy (for 9800-CL HA pair)
+redundancy
+ mode sso
+
+# Show redundancy status
+show redundancy states
+show redundancy
+
+# Force switchover
+redundancy force-switchover
+
+### Configuration Sync
+
+# Show configuration differences
+show archive config differences
+
+# Synchronize configuration
+copy running-config standby-running-config
+
+Documentation References
+------------------------
+
+[1] Cisco Systems. (2024). Cisco Catalyst 9800 Series Wireless Controller Configuration Guide.
+    https://www.cisco.com/c/en/us/support/wireless/catalyst-9800-series-wireless-controllers/products-installation-and-configuration-guides-list.html
+    Official configuration guide for 9800 WLC.
+
+[2] Cisco Systems. (2024). Cisco IOS XE Wireless Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/wireless/controller/9800/config-guide/
+    Comprehensive wireless configuration for IOS-XE based controllers.
+
+[3] Cisco Systems. (2024). Cisco 9800 Series Wireless Controller Command Reference.
+    https://www.cisco.com/c/en/us/td/docs/wireless/controller/9800/command-reference/
+    Complete command reference for 9800 WLC.
+
+[4] Cisco Systems. (2024). Cisco Wireless LAN Controller Deployment Guide.
+    https://www.cisco.com/c/en/us/td/docs/wireless/controller/9800/deployment-guide/
+    Deployment best practices and guidelines.
+
+[5] Cisco Systems. (2024). Cisco Enterprise Mobility Design Guide.
+    https://www.cisco.com/c/en/us/td/docs/solutions/Enterprise/Mobility/emob41dg/emob41dg-wrapper.html
+    Enterprise wireless mobility architecture and design.
+
+[6] Cisco Systems. (2024). FlexConnect Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/wireless/controller/9800/config-guide/flexconnect/
+    FlexConnect (HREAP) configuration for remote sites.
+
+[7] Cisco Systems. (2024). High Availability Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/wireless/controller/9800/config-guide/high-availability/
+    HA and redundancy configuration.
+
+[8] Cisco Systems. (2024). Security Configuration Guide for Wireless.
+    https://www.cisco.com/c/en/us/td/docs/wireless/controller/9800/config-guide/security/
+    WPA2, WPA3, 802.1X, and security features.
+
+[9] Cisco Systems. (2024). Quality of Service Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/wireless/controller/9800/config-guide/qos/
+    QoS and traffic management for wireless.
+
+[10] Cisco Systems. (2024). Troubleshooting Guide for Catalyst 9800.
+     https://www.cisco.com/c/en/us/support/docs/wireless/catalyst-9800-series-wireless-controllers/
+     Troubleshooting common wireless issues.
+
+[11] Cisco Wireless LAN Controllers (CWLC) Certification Guide.
+     Cisco Press. Wireless LAN configuration and management.
+
+[12] Cisco Learning Network.
+     https://learningnetwork.cisco.com/s/topic/0TO3i0000008jY5GAI/wireless
+     Community resources for wireless technologies.
+
+Key Differences: 9800 WLC vs Legacy WLC
+----------------------------------------
+
+1. **Operating System:**
+   - 9800: IOS-XE (full IOS-XE CLI)
+   - Legacy (5520, etc.): AireOS (different CLI syntax)
+
+2. **Configuration Model:**
+   - 9800: Hierarchical configuration with profiles, policies, and tags
+   - Legacy: Flat configuration with direct WLAN-to-interface mapping
+
+3. **Management:**
+   - 9800: CLI, GUI, DNA Center, or API
+   - Legacy: GUI-centric with limited CLI
+
+4. **Tagging System:**
+   - 9800: Policy tags, site tags, RF tags for scalability
+   - Legacy: AP groups
+
+5. **CAPWAP:**
+   - 9800: Enhanced CAPWAP with better scalability
+   - Legacy: Traditional CAPWAP
+
+6. **Mobility:**
+   - 9800: Enhanced mobility with distributed architecture
+   - Legacy: Centralized mobility architecture
+
+Notes
+-----
+
+- 9800 WLC runs IOS-XE, so standard IOS-XE commands apply
+- Configuration is more modular with profiles, policies, and tags
+- Policy tags define WLAN to policy mappings
+- Site tags define location-specific settings
+- RF tags define radio profiles
+- APs automatically join and receive configuration via tags
+- FlexConnect allows local switching at remote sites
+- Use "wireless" keyword for wireless-specific commands
+- Web GUI available at https://<management-ip>
+- Day 0 configuration can be automated via ZTP (Zero Touch Provisioning)
+- DNA Center provides centralized management and automation
+- Always test wireless configuration in lab before production deployment

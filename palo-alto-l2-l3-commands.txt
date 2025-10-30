@@ -1,0 +1,775 @@
+Palo Alto Networks CLI Commands for Layer 2 and Layer 3 Configuration
+=======================================================================
+
+This document provides common Palo Alto Networks CLI commands for configuring Layer 2 and Layer 3 functionality on Palo Alto firewalls (PA Series).
+
+Basic CLI Navigation
+--------------------
+
+# Enter operational mode (default)
+# Press Enter at login
+
+# Enter configuration mode
+configure
+
+# Exit configuration mode
+exit
+
+# Show configuration
+show
+
+# Show running configuration
+run show config running
+
+# Commit configuration changes
+commit
+
+# Commit with description
+commit description "Added VLAN configuration"
+
+# Commit and force (override warnings)
+commit force
+
+# Show pending changes
+show config diff
+
+# Show candidate configuration
+show
+
+# Discard candidate configuration
+load config from running-config.xml
+
+# Exit to operational mode from config mode
+exit
+run <command>  # Execute operational command from config mode
+
+# Save configuration
+save config to <filename>
+
+# Load configuration
+load config from <filename>
+
+Layer 2 Configuration
+---------------------
+
+### VLAN Configuration
+
+# Create VLAN object
+set network vlan <vlan-name> virtual-interface interface vlan.<id>
+set network vlan <vlan-name> interface [ list of interfaces ]
+
+# Example: Create VLAN 100
+set network vlan VLAN-100 virtual-interface interface vlan.100
+set network vlan VLAN-100 interface [ ethernet1/1 ethernet1/2 ]
+commit
+
+# Show VLAN configuration
+show network vlan
+
+### Layer 2 Interface Configuration
+
+# Configure interface as Layer 2
+set network interface ethernet ethernet1/1 link-state auto
+set network interface ethernet ethernet1/1 link-duplex auto
+set network interface ethernet ethernet1/1 link-speed auto
+set network interface ethernet ethernet1/1 layer2
+commit
+
+# Assign interface to VLAN
+set network vlan VLAN-100 interface ethernet1/1
+commit
+
+# Configure interface description
+set network interface ethernet ethernet1/1 comment "Access port to server"
+commit
+
+### Layer 2 Subinterface Configuration
+
+# Create Layer 2 subinterface with VLAN tag
+set network interface ethernet ethernet1/3 layer2
+set network interface ethernet ethernet1/3 layer2 units ethernet1/3.100
+set network interface ethernet ethernet1/3 layer2 units ethernet1/3.100 tag 100
+commit
+
+### Virtual Wire Configuration
+
+# Configure virtual wire (Layer 2 transparent mode)
+set network virtual-wire VW-1 interface1 ethernet1/5
+set network virtual-wire VW-1 interface2 ethernet1/6
+set network virtual-wire VW-1 tag-allowed 100
+commit
+
+# Show virtual wire configuration
+show network virtual-wire
+
+### VLAN Interface (Layer 3 SVI)
+
+# Create VLAN interface (SVI equivalent)
+set network interface vlan units vlan.100
+set network interface vlan units vlan.100 ip 10.100.0.1/24
+set network interface vlan units vlan.100 comment "Gateway for VLAN 100"
+
+# Assign VLAN interface to zone
+set zone trust network layer3 vlan.100
+commit
+
+# Enable DHCP on VLAN interface
+set network dhcp interface vlan.100 server enable yes
+set network dhcp interface vlan.100 server option lease timeout 86400
+set network dhcp interface vlan.100 server option dns primary 8.8.8.8
+set network dhcp interface vlan.100 server option dns secondary 8.8.4.4
+set network dhcp interface vlan.100 server ip-pool 10.100.0.100-10.100.0.200 255.255.255.0
+set network dhcp interface vlan.100 server option gateway 10.100.0.1
+commit
+
+### Link Aggregation (LAG/LACP)
+
+# Create aggregate interface
+set network interface aggregate-ethernet ae1 layer3
+set network interface aggregate-ethernet ae1 ip 192.168.1.1/24
+set network interface aggregate-ethernet ae1 lacp enable yes
+set network interface aggregate-ethernet ae1 lacp mode active
+set network interface aggregate-ethernet ae1 lacp transmission-rate fast
+
+# Add member interfaces to LAG
+set network interface ethernet ethernet1/7 aggregate-group ae1
+set network interface ethernet ethernet1/8 aggregate-group ae1
+commit
+
+# Show aggregate interface status
+show interface ae1
+show lacp aggregate-ethernet ae1
+
+### Layer 2 Security Features
+
+# Configure MAC address learning
+# (Enabled by default, disable if needed)
+set network interface ethernet ethernet1/1 layer2 lldp enable no
+
+# Configure unknown unicast flooding
+set network vlan VLAN-100 interface ethernet1/1 unknown-unicast-flooding no
+commit
+
+Layer 3 Configuration
+---------------------
+
+### Layer 3 Interface Configuration
+
+# Configure physical interface as Layer 3
+set network interface ethernet ethernet1/10 layer3 ip 192.168.1.1/24
+set network interface ethernet ethernet1/10 comment "WAN Interface to ISP"
+set network interface ethernet ethernet1/10 layer3 mtu 1500
+commit
+
+# Configure interface with multiple IP addresses
+set network interface ethernet ethernet1/10 layer3 ip 192.168.1.1/24
+set network interface ethernet ethernet1/10 layer3 ip 192.168.1.2/24
+commit
+
+# Configure interface for DHCP client
+set network interface ethernet ethernet1/11 layer3 dhcp-client enable yes
+set network interface ethernet ethernet1/11 layer3 dhcp-client create-default-route yes
+commit
+
+# Configure interface for PPPoE
+set network interface ethernet ethernet1/12 layer3 pppoe user <username>
+set network interface ethernet ethernet1/12 layer3 pppoe password
+# (password will be prompted)
+commit
+
+### Layer 3 Subinterface Configuration
+
+# Create Layer 3 subinterface with VLAN tag
+set network interface ethernet ethernet1/13 layer3 units ethernet1/13.200
+set network interface ethernet ethernet1/13 layer3 units ethernet1/13.200 tag 200
+set network interface ethernet ethernet1/13 layer3 units ethernet1/13.200 ip 10.200.0.1/24
+commit
+
+### Loopback Interface Configuration
+
+# Create loopback interface
+set network interface loopback units loopback.1 ip 1.1.1.1/32
+set network interface loopback units loopback.1 comment "Router ID and Management"
+commit
+
+### Zone Configuration
+
+# Create security zones
+set zone trust network layer3 [ ethernet1/1 vlan.100 ]
+set zone untrust network layer3 [ ethernet1/10 ]
+set zone dmz network layer3 [ ethernet1/15 ]
+commit
+
+# Show zones
+show zone
+
+### Virtual Router Configuration
+
+# Create virtual router
+set network virtual-router default
+commit
+
+# Assign interfaces to virtual router
+set network virtual-router default interface [ ethernet1/10 ethernet1/13.200 vlan.100 ]
+commit
+
+### Static Routes
+
+# Configure static route
+set network virtual-router default routing-table ip static-route DEFAULT-ROUTE destination 0.0.0.0/0
+set network virtual-router default routing-table ip static-route DEFAULT-ROUTE nexthop ip-address 192.168.1.254
+set network virtual-router default routing-table ip static-route DEFAULT-ROUTE metric 10
+set network virtual-router default routing-table ip static-route DEFAULT-ROUTE admin-distance 10
+commit
+
+# Configure static route with specific interface
+set network virtual-router default routing-table ip static-route INTERNAL-NET destination 10.0.0.0/8
+set network virtual-router default routing-table ip static-route INTERNAL-NET nexthop ip-address 192.168.1.253
+commit
+
+# Configure floating static route (backup route)
+set network virtual-router default routing-table ip static-route BACKUP-ROUTE destination 0.0.0.0/0
+set network virtual-router default routing-table ip static-route BACKUP-ROUTE nexthop ip-address 192.168.1.250
+set network virtual-router default routing-table ip static-route BACKUP-ROUTE admin-distance 200
+commit
+
+# Show routing table
+show routing route
+show routing route virtual-router default
+
+### Dynamic Routing - OSPF
+
+# Enable OSPF on virtual router
+set network virtual-router default protocol ospf enable yes
+set network virtual-router default protocol ospf router-id 1.1.1.1
+
+# Configure OSPF area
+set network virtual-router default protocol ospf area 0.0.0.0
+
+# Add interfaces to OSPF area
+set network virtual-router default protocol ospf area 0.0.0.0 interface ethernet1/10 enable yes
+set network virtual-router default protocol ospf area 0.0.0.0 interface ethernet1/10 passive no
+set network virtual-router default protocol ospf area 0.0.0.0 interface ethernet1/10 link-type broadcast
+set network virtual-router default protocol ospf area 0.0.0.0 interface ethernet1/10 metric 10
+
+# Configure OSPF passive interface
+set network virtual-router default protocol ospf area 0.0.0.0 interface vlan.100 enable yes
+set network virtual-router default protocol ospf area 0.0.0.0 interface vlan.100 passive yes
+
+# Configure OSPF authentication
+set network virtual-router default protocol ospf area 0.0.0.0 interface ethernet1/10 authentication md5
+set network virtual-router default protocol ospf area 0.0.0.0 interface ethernet1/10 authentication md5 key-id 1
+set network virtual-router default protocol ospf area 0.0.0.0 interface ethernet1/10 authentication md5 key <key>
+commit
+
+# Redistribute connected routes into OSPF
+set network virtual-router default protocol ospf export-rules connected-routes
+set network virtual-router default protocol redistribution-profile connected-routes priority 1
+set network virtual-router default protocol redistribution-profile connected-routes action redist
+set network virtual-router default protocol redistribution-profile connected-routes filter type connect
+commit
+
+# Show OSPF information
+show routing protocol ospf neighbor
+show routing protocol ospf interface
+show routing protocol ospf database
+
+### Dynamic Routing - BGP
+
+# Enable BGP on virtual router
+set network virtual-router default protocol bgp enable yes
+set network virtual-router default protocol bgp router-id 1.1.1.1
+set network virtual-router default protocol bgp local-as 65000
+
+# Configure BGP peer group
+set network virtual-router default protocol bgp peer-group EXTERNAL type ebgp
+set network virtual-router default protocol bgp peer-group EXTERNAL peer ISP-1 peer-address 192.168.1.254
+set network virtual-router default protocol bgp peer-group EXTERNAL peer ISP-1 peer-as 65001
+set network virtual-router default protocol bgp peer-group EXTERNAL peer ISP-1 enable yes
+
+# Configure BGP authentication
+set network virtual-router default protocol bgp peer-group EXTERNAL peer ISP-1 connection-options authentication <secret>
+
+# Configure BGP timers
+set network virtual-router default protocol bgp peer-group EXTERNAL peer ISP-1 connection-options keep-alive-interval 30
+set network virtual-router default protocol bgp peer-group EXTERNAL peer ISP-1 connection-options hold-time 90
+
+# Configure route advertisement
+set network virtual-router default protocol bgp policy export rules ADVERTISE-DEFAULT action allow
+set network virtual-router default protocol bgp policy export rules ADVERTISE-DEFAULT match address-prefix 0.0.0.0/0 exact yes
+commit
+
+# Configure iBGP
+set network virtual-router default protocol bgp peer-group INTERNAL type ibgp
+set network virtual-router default protocol bgp peer-group INTERNAL peer CORE-1 peer-address 10.1.1.2
+set network virtual-router default protocol bgp peer-group INTERNAL peer CORE-1 peer-as 65000
+set network virtual-router default protocol bgp peer-group INTERNAL peer CORE-1 enable yes
+set network virtual-router default protocol bgp peer-group INTERNAL peer CORE-1 local-address ip 10.1.1.1
+commit
+
+# Show BGP information
+show routing protocol bgp summary
+show routing protocol bgp peer
+show routing protocol bgp rib-out
+
+### Policy-Based Forwarding (PBF)
+
+# Configure policy-based forwarding rule
+set rulebase pbf rules PBF-RULE-1 from zone trust
+set rulebase pbf rules PBF-RULE-1 source 10.100.0.0/24
+set rulebase pbf rules PBF-RULE-1 destination any
+set rulebase pbf rules PBF-RULE-1 action forward
+set rulebase pbf rules PBF-RULE-1 action forward nexthop ip-address 192.168.1.253
+set rulebase pbf rules PBF-RULE-1 action forward monitor ip-address 8.8.8.8
+set rulebase pbf rules PBF-RULE-1 action forward monitor enable yes
+commit
+
+# Show PBF rules
+show pbf rule all
+
+### NAT Configuration
+
+# Configure source NAT (outbound PAT)
+set rulebase nat rules SNAT-RULE source-translation dynamic-ip-and-port interface-address interface ethernet1/10
+set rulebase nat rules SNAT-RULE source-translation dynamic-ip-and-port interface-address ip 192.168.1.1
+set rulebase nat rules SNAT-RULE to untrust
+set rulebase nat rules SNAT-RULE from trust
+set rulebase nat rules SNAT-RULE source 10.0.0.0/8
+set rulebase nat rules SNAT-RULE destination any
+set rulebase nat rules SNAT-RULE service any
+commit
+
+# Configure destination NAT (port forwarding)
+set rulebase nat rules DNAT-WEB destination-translation translated-address 10.100.0.10
+set rulebase nat rules DNAT-WEB destination-translation translated-port 80
+set rulebase nat rules DNAT-WEB to trust
+set rulebase nat rules DNAT-WEB from untrust
+set rulebase nat rules DNAT-WEB source any
+set rulebase nat rules DNAT-WEB destination 203.0.113.50
+set rulebase nat rules DNAT-WEB service service-http
+commit
+
+# Configure static NAT (1-to-1)
+set rulebase nat rules STATIC-NAT-1 source-translation static-ip translated-address 203.0.113.30
+set rulebase nat rules STATIC-NAT-1 to untrust
+set rulebase nat rules STATIC-NAT-1 from trust
+set rulebase nat rules STATIC-NAT-1 source 10.100.0.20
+set rulebase nat rules STATIC-NAT-1 destination any
+commit
+
+# Show NAT rules and translations
+show running nat-policy
+show session all filter nat True
+
+### Security Policy Configuration
+
+# Configure security policy
+set rulebase security rules ALLOW-OUTBOUND from trust
+set rulebase security rules ALLOW-OUTBOUND to untrust
+set rulebase security rules ALLOW-OUTBOUND source 10.0.0.0/8
+set rulebase security rules ALLOW-OUTBOUND destination any
+set rulebase security rules ALLOW-OUTBOUND application [ web-browsing ssl ]
+set rulebase security rules ALLOW-OUTBOUND service application-default
+set rulebase security rules ALLOW-OUTBOUND action allow
+set rulebase security rules ALLOW-OUTBOUND log-end yes
+commit
+
+# Configure security policy with specific services
+set rulebase security rules ALLOW-SSH from trust
+set rulebase security rules ALLOW-SSH to dmz
+set rulebase security rules ALLOW-SSH source 10.100.0.0/24
+set rulebase security rules ALLOW-SSH destination 10.200.0.0/24
+set rulebase security rules ALLOW-SSH service service-tcp-22
+set rulebase security rules ALLOW-SSH action allow
+set rulebase security rules ALLOW-SSH log-end yes
+commit
+
+# Show security policies
+show running security-policy
+
+### High Availability (HA)
+
+# Configure HA
+set deviceconfig high-availability enabled yes
+set deviceconfig high-availability group 1
+set deviceconfig high-availability interface ha1 ip-address 192.168.255.1
+set deviceconfig high-availability interface ha1 netmask 255.255.255.252
+set deviceconfig high-availability interface ha1 port ethernet1/20
+
+set deviceconfig high-availability interface ha2 ip-address 192.168.254.1
+set deviceconfig high-availability interface ha2 netmask 255.255.255.252
+set deviceconfig high-availability interface ha2 port ethernet1/21
+
+set deviceconfig high-availability interface ha1-backup ip-address 10.0.0.1
+set deviceconfig high-availability interface ha1-backup netmask 255.255.255.252
+set deviceconfig high-availability interface ha1-backup port ethernet1/22
+
+# Configure HA as active/passive
+set deviceconfig high-availability mode active-passive
+set deviceconfig high-availability passive-link-state auto
+set deviceconfig high-availability enable-config-sync yes
+set deviceconfig high-availability peer-ip 192.168.255.2
+commit
+
+# Show HA status
+show high-availability all
+show high-availability state
+
+### QoS Configuration
+
+# Configure QoS profile
+set network qos profile QOS-PROFILE class-bandwidth-type mbps
+set network qos profile QOS-PROFILE class class1 priority real-time
+set network qos profile QOS-PROFILE class class1 class-bandwidth 30
+set network qos profile QOS-PROFILE class class2 priority high
+set network qos profile QOS-PROFILE class class2 class-bandwidth 40
+
+# Apply QoS profile to interface
+set network interface ethernet ethernet1/10 layer3 qos enable yes
+set network interface ethernet ethernet1/10 layer3 qos profile QOS-PROFILE
+commit
+
+# Show QoS statistics
+show qos interface ethernet1/10
+
+### DHCP Relay Configuration
+
+# Configure DHCP relay on VLAN interface
+set network dhcp interface vlan.100 relay enabled yes
+set network dhcp interface vlan.100 relay ip-address [ 10.0.0.10 10.0.0.11 ]
+commit
+
+# Show DHCP relay information
+show dhcp relay
+
+### Virtual Router Redundancy
+
+# Configure virtual router with multiple paths
+set network virtual-router VR-CUSTOMER interface [ ethernet1/14 ethernet1/15 ]
+set network virtual-router VR-CUSTOMER routing-table ip static-route DEFAULT-PRIMARY destination 0.0.0.0/0
+set network virtual-router VR-CUSTOMER routing-table ip static-route DEFAULT-PRIMARY nexthop ip-address 172.16.1.254
+set network virtual-router VR-CUSTOMER routing-table ip static-route DEFAULT-PRIMARY admin-distance 10
+
+set network virtual-router VR-CUSTOMER routing-table ip static-route DEFAULT-BACKUP destination 0.0.0.0/0
+set network virtual-router VR-CUSTOMER routing-table ip static-route DEFAULT-BACKUP nexthop ip-address 172.16.2.254
+set network virtual-router VR-CUSTOMER routing-table ip static-route DEFAULT-BACKUP admin-distance 20
+commit
+
+### Management Interface Configuration
+
+# Configure management interface
+set deviceconfig system ip-address 192.168.10.1 netmask 255.255.255.0 default-gateway 192.168.10.254
+commit
+
+# Configure DNS servers
+set deviceconfig system dns-setting servers primary 8.8.8.8 secondary 8.8.4.4
+commit
+
+# Configure NTP
+set deviceconfig system ntp-servers primary-ntp-server ntp-server-address 0.pool.ntp.org
+set deviceconfig system ntp-servers primary-ntp-server authentication-type none
+commit
+
+### Service and Application Objects
+
+# Create custom service object
+set service TCP-8080 protocol tcp port 8080
+set service UDP-5000 protocol udp port 5000
+commit
+
+# Create service group
+set service-group WEB-SERVICES members [ service-http service-https TCP-8080 ]
+commit
+
+# Show services
+show service all
+
+### Address Objects
+
+# Create address object
+set address WEB-SERVER ip-netmask 10.100.0.10/32
+set address INTERNAL-NET ip-netmask 10.0.0.0/8
+set address OFFICE-NETWORK ip-netmask 192.168.100.0/24
+commit
+
+# Create address group
+set address-group TRUSTED-SERVERS static [ WEB-SERVER DB-SERVER APP-SERVER ]
+commit
+
+# Show address objects
+show address all
+
+Verification and Troubleshooting Commands
+------------------------------------------
+
+### Layer 2 Verification
+
+# Show VLAN information
+show network vlan
+show vlan all
+
+# Show interface status
+show interface all
+show interface ethernet1/1
+show interface ethernet1/1 | match status
+
+# Show MAC address table
+show mac all
+
+# Show virtual wire status
+show network virtual-wire
+
+# Show aggregate interface status
+show interface ae1
+show lacp aggregate-ethernet ae1
+
+### Layer 3 Verification
+
+# Show interface status
+show interface all
+show interface ethernet1/10
+show interface vlan.100
+
+# Show routing table
+show routing route
+show routing route destination 0.0.0.0/0
+show routing route virtual-router default
+
+# Show ARP table
+show arp all
+show arp interface ethernet1/10
+
+# Test connectivity
+ping host 8.8.8.8
+ping source 192.168.1.1 host 8.8.8.8 count 10
+
+traceroute host 8.8.8.8
+
+# Show OSPF information
+show routing protocol ospf neighbor
+show routing protocol ospf interface
+show routing protocol ospf database
+
+# Show BGP information
+show routing protocol bgp summary
+show routing protocol bgp peer
+show routing protocol bgp loc-rib
+
+# Show virtual router information
+show routing route virtual-router default
+show routing summary
+
+### NAT and Session Verification
+
+# Show NAT rules
+show running nat-policy
+
+# Show active sessions
+show session all
+show session all filter destination 8.8.8.8
+show session all filter source 10.100.0.10
+
+# Show NAT translations
+show session all filter nat True
+
+# Show session statistics
+show session info
+show session meter
+
+### Security Policy Verification
+
+# Show security policies
+show running security-policy
+show running security-policy rule-name ALLOW-OUTBOUND
+
+# Show security policy hit count
+show rule-hit-count
+
+# Show threat logs
+show log traffic
+show log threat
+
+### System Information
+
+# Show system information
+show system info
+show system resources
+show chassis status
+
+# Show software version
+show system software status
+
+# Show running processes
+top
+
+# Show disk usage
+show system disk-space
+
+# Show environmental status (fans, temperature, power)
+show system environmentals
+
+# Show log files
+show log system
+
+# Show configuration
+show config running
+show config pushed-shared-policy
+
+### High Availability Verification
+
+# Show HA status
+show high-availability all
+show high-availability state
+show high-availability interface
+
+# Show HA link status
+show high-availability link-monitoring
+
+# Show HA path monitoring
+show high-availability path-monitoring
+
+### Debugging (Use with Caution in Production)
+
+# Enable debug logging
+debug software restart process
+
+# Show CLI commands
+set cli config-output-format set
+set cli pager off
+
+# Clear counters
+clear session all
+clear arp all
+clear counter interface all
+
+### Configuration Management
+
+# Show configuration
+show config running
+
+# Show configuration in set format
+set cli config-output-format set
+show
+
+# Save configuration to file
+save config to backup-config.xml
+
+# Load configuration from file
+load config from backup-config.xml
+commit
+
+# Export configuration
+scp export configuration from backup-config.xml to admin@10.0.0.100:/backup/
+
+# Import configuration
+scp import configuration from admin@10.0.0.100:/backup/backup-config.xml to running-config.xml
+
+# Show candidate configuration changes
+show config diff
+
+# Revert to running configuration
+load config from running-config.xml
+
+Documentation References
+------------------------
+
+[1] Palo Alto Networks. (2024). PAN-OS CLI Reference.
+    https://docs.paloaltonetworks.com/pan-os/cli-reference
+    Official CLI command reference for PAN-OS.
+
+[2] Palo Alto Networks. (2024). PAN-OS Administrator's Guide.
+    https://docs.paloaltonetworks.com/pan-os/administrators-guide
+    Comprehensive configuration guide for Palo Alto firewalls.
+
+[3] Palo Alto Networks. (2024). Networking Configuration Guide.
+    https://docs.paloaltonetworks.com/pan-os/networking
+    Layer 2 and Layer 3 networking configuration.
+
+[4] Palo Alto Networks. (2024). High Availability Configuration Guide.
+    https://docs.paloaltonetworks.com/pan-os/high-availability
+    HA setup and configuration.
+
+[5] Palo Alto Networks. (2024). Virtual Router Configuration.
+    https://docs.paloaltonetworks.com/pan-os/virtual-routers
+    Virtual router and routing protocol configuration.
+
+[6] Palo Alto Networks. (2024). NAT Configuration Guide.
+    https://docs.paloaltonetworks.com/pan-os/nat
+    Network Address Translation configuration.
+
+[7] Palo Alto Networks. (2024). Security Policy Configuration.
+    https://docs.paloaltonetworks.com/pan-os/security-policy
+    Security policy creation and management.
+
+[8] Palo Alto Networks. (2024). QoS Configuration Guide.
+    https://docs.paloaltonetworks.com/pan-os/qos
+    Quality of Service configuration.
+
+[9] Kim, T., & Rossberg, R. (2015). Palo Alto Networks Firewall Essentials.
+    Configuration and management best practices.
+
+[10] Palo Alto Networks. (2024). Best Practices Guide.
+     https://docs.paloaltonetworks.com/best-practices
+     Deployment and configuration best practices.
+
+[11] Palo Alto Networks. (2024). Technical Documentation Portal.
+     https://docs.paloaltonetworks.com/
+     Complete technical documentation library.
+
+[12] Palo Alto Networks. (2024). Knowledge Base.
+     https://knowledgebase.paloaltonetworks.com/
+     Troubleshooting articles and solutions.
+
+[13] Palo Alto Networks. (2024). Live Community.
+     https://live.paloaltonetworks.com/
+     Community forums and discussions.
+
+Key Palo Alto Concepts
+----------------------
+
+1. Next-Generation Firewall Features:
+   - Application-based policies (not just port-based)
+   - User-ID for user-based policies
+   - Content-ID for threat prevention
+   - App-ID for application identification
+
+2. Security Zones:
+   - Interfaces must be assigned to security zones
+   - Policies control traffic between zones
+   - Common zones: trust, untrust, dmz
+
+3. Virtual Routers:
+   - Logical routing instances
+   - Can have multiple virtual routers per firewall
+   - Interfaces assigned to virtual routers
+
+4. Commit Model:
+   - Changes are staged in candidate configuration
+   - Must commit to activate changes
+   - Can validate before committing
+
+5. Management Options:
+   - CLI (covered in this document)
+   - Web GUI (most common)
+   - Panorama (centralized management)
+   - API (for automation)
+
+6. Deployment Modes:
+   - Layer 3 mode (routed firewall)
+   - Layer 2 mode (transparent firewall)
+   - Virtual wire mode (bump-in-the-wire)
+   - Tap mode (monitoring only)
+
+Notes
+-----
+
+- Palo Alto firewalls use PAN-OS operating system
+- Configuration requires explicit commit to take effect
+- Web GUI is more commonly used than CLI for configuration
+- CLI is useful for automation, scripting, and troubleshooting
+- Use "set cli config-output-format set" to view configuration in CLI format
+- TAB key provides command completion
+- "?" shows available options
+- Use "run" prefix to execute operational commands from config mode
+- Always test NAT and security policies after configuration
+- Monitor logs to verify traffic flow and policy hits

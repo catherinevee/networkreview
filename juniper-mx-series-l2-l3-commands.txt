@@ -1,0 +1,874 @@
+Juniper MX Series CLI Commands for Layer 2 and Layer 3 Configuration
+======================================================================
+
+This document provides common Juniper MX Series CLI commands for configuring Layer 2 and Layer 3 functionality on Juniper MX routers (carrier-grade edge and core routers).
+
+Basic CLI Navigation
+--------------------
+
+# Enter configuration mode
+configure
+configure exclusive   # Lock configuration
+configure private     # Private candidate configuration
+
+# Show configuration
+show configuration
+
+# Show configuration with line numbers
+show configuration | display set
+
+# Commit changes
+commit
+
+# Commit with comment
+commit comment "Added VLAN 100 configuration"
+
+# Commit confirmed (auto-rollback if not confirmed)
+commit confirmed 5    # Rollback in 5 minutes if not confirmed
+commit                # Confirm the commit
+
+# Commit check (validate without applying)
+commit check
+
+# Show differences before committing
+show | compare
+
+# Discard candidate configuration
+rollback 0
+
+# Exit configuration mode
+exit
+quit
+
+# Rollback to previous configuration
+rollback 1            # Previous commit
+rollback 2            # Two commits ago
+
+# Show rollback information
+show system rollback
+
+# Show commit history
+show system commit
+
+Layer 2 Configuration
+---------------------
+
+### Layer 2 Interface Configuration (Access Mode)
+
+# Configure logical interface for Layer 2
+set interfaces ge-0/0/0 description "Access Port to Customer"
+set interfaces ge-0/0/0 flexible-vlan-tagging
+set interfaces ge-0/0/0 encapsulation flexible-ethernet-services
+
+set interfaces ge-0/0/0 unit 100 description "VLAN 100 Access"
+set interfaces ge-0/0/0 unit 100 encapsulation vlan-bridge
+set interfaces ge-0/0/0 unit 100 vlan-id 100
+
+commit
+
+# Configure interface without VLAN tagging (native)
+set interfaces ge-0/0/1 unit 0 family bridge interface-mode access
+set interfaces ge-0/0/1 unit 0 family bridge vlan-id 100
+
+commit
+
+### Layer 2 Interface Configuration (Trunk Mode)
+
+# Configure trunk interface with multiple VLANs
+set interfaces ge-0/0/2 description "Trunk to Distribution Switch"
+set interfaces ge-0/0/2 flexible-vlan-tagging
+set interfaces ge-0/0/2 encapsulation flexible-ethernet-services
+
+set interfaces ge-0/0/2 unit 100 encapsulation vlan-bridge
+set interfaces ge-0/0/2 unit 100 vlan-id 100
+
+set interfaces ge-0/0/2 unit 200 encapsulation vlan-bridge
+set interfaces ge-0/0/2 unit 200 vlan-id 200
+
+set interfaces ge-0/0/2 unit 300 encapsulation vlan-bridge
+set interfaces ge-0/0/2 unit 300 vlan-id 300
+
+commit
+
+# Configure VLAN range on interface
+set interfaces ge-0/0/2 unit 0 family bridge interface-mode trunk
+set interfaces ge-0/0/2 unit 0 family bridge vlan-id-list [100 200 300-310]
+
+commit
+
+### Bridge Domain Configuration
+
+# Create bridge domain (VPLS-style)
+set routing-instances BD-100 instance-type virtual-switch
+set routing-instances BD-100 description "Bridge Domain 100"
+set routing-instances BD-100 bridge-domains bd100 vlan-id 100
+set routing-instances BD-100 bridge-domains bd100 interface ge-0/0/0.100
+set routing-instances BD-100 bridge-domains bd100 interface ge-0/0/1.100
+
+commit
+
+# Configure integrated routing and bridging (IRB)
+set routing-instances BD-100 bridge-domains bd100 routing-interface irb.100
+
+set interfaces irb unit 100 family inet address 10.100.0.1/24
+set interfaces irb unit 100 description "Gateway for Bridge Domain 100"
+
+commit
+
+### VLAN Configuration (Traditional Bridge/Switch)
+
+# Configure VLAN in bridge domain
+set vlans vlan-100 vlan-id 100
+set vlans vlan-100 description "Engineering Department"
+set vlans vlan-100 l3-interface irb.100
+
+set interfaces ge-0/0/0 unit 0 family ethernet-switching vlan members vlan-100
+
+commit
+
+### MAC Address Table Configuration
+
+# Configure static MAC address
+set routing-instances BD-100 bridge-domains bd100 forwarding-options mac-table static-mac 00:11:22:33:44:55 interface ge-0/0/0.100
+
+# Configure MAC aging time
+set routing-instances BD-100 bridge-domains bd100 forwarding-options mac-table aging-time 600
+
+# Configure MAC learning disable
+set routing-instances BD-100 bridge-domains bd100 forwarding-options no-mac-learning
+
+# Show MAC address table
+show bridge mac-table
+show bridge mac-table instance BD-100
+
+### Spanning Tree Protocol (RSTP/MSTP)
+
+# Enable RSTP in bridge domain
+set routing-instances BD-100 bridge-domains bd100 protocols rstp
+
+# Configure RSTP bridge priority
+set routing-instances BD-100 bridge-domains bd100 protocols rstp bridge-priority 4k
+
+# Configure RSTP on interface
+set routing-instances BD-100 bridge-domains bd100 protocols rstp interface ge-0/0/0.100
+set routing-instances BD-100 bridge-domains bd100 protocols rstp interface ge-0/0/0.100 edge
+set routing-instances BD-100 bridge-domains bd100 protocols rstp interface ge-0/0/0.100 cost 20000
+
+# Configure MSTP
+set routing-instances BD-100 bridge-domains bd100 protocols mstp
+
+commit
+
+# Show spanning tree information
+show spanning-tree bridge
+show spanning-tree interface
+
+### Link Aggregation (LAG/LACP)
+
+# Create aggregated ethernet interface
+set interfaces ae0 description "Link Aggregation to Core Router"
+set interfaces ae0 aggregated-ether-options minimum-links 1
+set interfaces ae0 aggregated-ether-options lacp active
+set interfaces ae0 aggregated-ether-options lacp periodic fast
+
+# Add member interfaces to LAG
+set interfaces ge-0/0/3 description "Member of ae0"
+set interfaces ge-0/0/3 gigether-options 802.3ad ae0
+
+set interfaces ge-0/0/4 description "Member of ae0"
+set interfaces ge-0/0/4 gigether-options 802.3ad ae0
+
+# Configure ae interface for Layer 2
+set interfaces ae0 flexible-vlan-tagging
+set interfaces ae0 encapsulation flexible-ethernet-services
+set interfaces ae0 unit 100 encapsulation vlan-bridge
+set interfaces ae0 unit 100 vlan-id 100
+
+commit
+
+# Show LAG status
+show lacp interfaces
+show interfaces ae0
+show interfaces ae0 extensive
+
+### VPLS (Virtual Private LAN Service)
+
+# Configure VPLS instance
+set routing-instances VPLS-CUSTOMER-A instance-type vpls
+set routing-instances VPLS-CUSTOMER-A interface ge-0/0/0.100
+set routing-instances VPLS-CUSTOMER-A route-distinguisher 65000:100
+set routing-instances VPLS-CUSTOMER-A vrf-target target:65000:100
+set routing-instances VPLS-CUSTOMER-A protocols vpls site-range 10
+set routing-instances VPLS-CUSTOMER-A protocols vpls no-tunnel-services
+set routing-instances VPLS-CUSTOMER-A protocols vpls site CE1 site-identifier 1
+set routing-instances VPLS-CUSTOMER-A protocols vpls site CE1 interface ge-0/0/0.100
+
+commit
+
+# Configure VPLS with LDP signaling
+set routing-instances VPLS-CUSTOMER-A protocols vpls neighbor 10.1.1.2
+set routing-instances VPLS-CUSTOMER-A protocols vpls neighbor 10.1.1.3
+
+commit
+
+# Show VPLS information
+show vpls connections
+show vpls mac-table
+
+### L2Circuit (Point-to-Point L2VPN)
+
+# Configure L2Circuit
+set protocols l2circuit neighbor 10.1.1.2 interface ge-0/0/0.100 virtual-circuit-id 100
+set protocols l2circuit neighbor 10.1.1.2 interface ge-0/0/0.100 description "L2Circuit to Remote Site"
+set protocols l2circuit neighbor 10.1.1.2 interface ge-0/0/0.100 mtu 1500
+
+commit
+
+# Show L2Circuit status
+show l2circuit connections
+show l2circuit connections extensive
+
+### EVPN (Ethernet VPN)
+
+# Configure EVPN instance
+set routing-instances EVPN-100 instance-type evpn
+set routing-instances EVPN-100 vlan-id 100
+set routing-instances EVPN-100 interface ge-0/0/0.100
+set routing-instances EVPN-100 route-distinguisher 65000:100
+set routing-instances EVPN-100 vrf-target target:65000:100
+set routing-instances EVPN-100 protocols evpn
+
+commit
+
+# Show EVPN information
+show evpn database
+show evpn instance
+
+### Storm Control
+
+# Configure storm control on interface
+set interfaces ge-0/0/0 unit 100 family bridge storm-control broadcast-level 80
+set interfaces ge-0/0/0 unit 100 family bridge storm-control multicast-level 80
+set interfaces ge-0/0/0 unit 100 family bridge storm-control unknown-unicast-level 80
+
+commit
+
+Layer 3 Configuration
+---------------------
+
+### Interface Configuration (Routed/Layer 3)
+
+# Configure Layer 3 interface
+set interfaces ge-0/1/0 description "Layer 3 Interface to Router"
+set interfaces ge-0/1/0 unit 0 family inet address 192.168.1.1/24
+set interfaces ge-0/1/0 unit 0 family inet6 address 2001:db8::1/64
+
+commit
+
+# Configure secondary IP address
+set interfaces ge-0/1/0 unit 0 family inet address 192.168.1.2/24
+
+commit
+
+# Configure interface with multiple addresses
+set interfaces ge-0/1/0 unit 0 family inet address 192.168.1.1/24 primary
+set interfaces ge-0/1/0 unit 0 family inet address 192.168.1.10/24 preferred
+
+commit
+
+# Configure unnumbered interface
+set interfaces ge-0/1/1 unit 0 family inet unnumbered-address lo0.0
+
+commit
+
+# Configure loopback interface
+set interfaces lo0 unit 0 family inet address 1.1.1.1/32
+set interfaces lo0 unit 0 family inet6 address 2001:db8:ffff::1/128
+
+commit
+
+### VLAN/Subinterface Configuration
+
+# Configure 802.1Q subinterface
+set interfaces ge-0/1/0 vlan-tagging
+set interfaces ge-0/1/0 unit 100 vlan-id 100
+set interfaces ge-0/1/0 unit 100 family inet address 10.100.0.1/24
+
+commit
+
+### Static Routes
+
+# Configure IPv4 static route
+set routing-options static route 0.0.0.0/0 next-hop 192.168.1.254
+set routing-options static route 10.0.0.0/8 next-hop 192.168.1.253
+
+# Configure static route with preference (administrative distance)
+set routing-options static route 172.16.0.0/12 next-hop 192.168.1.252
+set routing-options static route 172.16.0.0/12 preference 5
+
+# Configure floating static route (backup route)
+set routing-options static route 0.0.0.0/0 qualified-next-hop 192.168.1.250
+set routing-options static route 0.0.0.0/0 qualified-next-hop 192.168.1.250 preference 200
+
+# Configure IPv6 static route
+set routing-options rib inet6.0 static route ::/0 next-hop 2001:db8::254
+
+commit
+
+# Show routing table
+show route
+show route protocol static
+show route extensive
+
+### VRF (Virtual Routing and Forwarding)
+
+# Create VRF instance
+set routing-instances CUSTOMER-A instance-type vrf
+set routing-instances CUSTOMER-A description "Customer A VRF"
+set routing-instances CUSTOMER-A route-distinguisher 65000:100
+set routing-instances CUSTOMER-A vrf-target target:65000:100
+set routing-instances CUSTOMER-A vrf-table-label
+
+# Assign interface to VRF
+set interfaces ge-0/1/5 unit 0 family inet address 172.16.1.1/24
+set routing-instances CUSTOMER-A interface ge-0/1/5.0
+
+# Configure static route in VRF
+set routing-instances CUSTOMER-A routing-options static route 0.0.0.0/0 next-hop 172.16.1.254
+
+commit
+
+# Show VRF information
+show route table CUSTOMER-A.inet.0
+show route instance CUSTOMER-A
+
+# Ping from VRF
+ping routing-instance CUSTOMER-A 172.16.1.254
+
+### Dynamic Routing - OSPF
+
+# Configure OSPF
+set protocols ospf area 0.0.0.0 interface ge-0/1/0.0
+set protocols ospf area 0.0.0.0 interface lo0.0 passive
+
+# Configure OSPF router ID
+set routing-options router-id 1.1.1.1
+
+# Configure OSPF interface parameters
+set protocols ospf area 0.0.0.0 interface ge-0/1/0.0 interface-type p2p
+set protocols ospf area 0.0.0.0 interface ge-0/1/0.0 metric 100
+set protocols ospf area 0.0.0.0 interface ge-0/1/0.0 hello-interval 5
+set protocols ospf area 0.0.0.0 interface ge-0/1/0.0 dead-interval 20
+
+# Configure OSPF authentication
+set protocols ospf area 0.0.0.0 interface ge-0/1/0.0 authentication md5 1 key "secretkey"
+
+# Configure OSPF area authentication
+set protocols ospf area 0.0.0.0 authentication-type md5
+
+# Configure OSPF reference bandwidth
+set protocols ospf reference-bandwidth 100g
+
+# Configure OSPF BFD
+set protocols ospf area 0.0.0.0 interface ge-0/1/0.0 bfd-liveness-detection minimum-interval 300
+
+commit
+
+# Show OSPF information
+show ospf neighbor
+show ospf interface
+show ospf database
+show ospf route
+
+# Configure OSPFv3 for IPv6
+set protocols ospf3 area 0.0.0.0 interface ge-0/1/0.0
+set protocols ospf3 area 0.0.0.0 interface lo0.0 passive
+
+commit
+
+### Dynamic Routing - IS-IS
+
+# Configure IS-IS
+set protocols isis interface ge-0/1/0.0 point-to-point
+set protocols isis interface ge-0/1/0.0 level 2 metric 10
+set protocols isis interface lo0.0 passive
+
+# Configure IS-IS NET (Network Entity Title)
+set protocols isis interface lo0.0 level 2 metric 0
+
+# Set IS-IS system ID
+set protocols isis level 2 wide-metrics-only
+set protocols isis level 1 disable
+
+# Configure NET address
+set routing-options router-id 1.1.1.1
+set protocols isis iso-address 49.0001.0000.0000.0001.00
+
+# Configure IS-IS authentication
+set protocols isis interface ge-0/1/0.0 level 2 hello-authentication-key "$9$secretkey"
+set protocols isis interface ge-0/1/0.0 level 2 hello-authentication-type md5
+
+# Configure IS-IS for IPv6
+set protocols isis interface ge-0/1/0.0 family inet6
+
+commit
+
+# Show IS-IS information
+show isis adjacency
+show isis interface
+show isis database
+show isis route
+
+### Dynamic Routing - BGP
+
+# Configure BGP
+set routing-options autonomous-system 65000
+set routing-options router-id 1.1.1.1
+
+set protocols bgp group EXTERNAL type external
+set protocols bgp group EXTERNAL peer-as 65001
+set protocols bgp group EXTERNAL neighbor 192.168.1.254 description "eBGP to ISP"
+
+# Configure BGP authentication
+set protocols bgp group EXTERNAL neighbor 192.168.1.254 authentication-key "secretkey"
+
+# Configure BGP policy
+set protocols bgp group EXTERNAL export BGP-EXPORT
+set protocols bgp group EXTERNAL import BGP-IMPORT
+
+# Configure iBGP
+set protocols bgp group INTERNAL type internal
+set protocols bgp group INTERNAL local-address 1.1.1.1
+set protocols bgp group INTERNAL neighbor 10.1.1.2 description "iBGP Peer"
+
+# Configure route reflector
+set protocols bgp group INTERNAL cluster 1.1.1.1
+set protocols bgp group INTERNAL neighbor 10.1.1.3 cluster 1.1.1.1
+
+# Configure BGP for VPNv4 (MPLS L3VPN)
+set protocols bgp group INTERNAL family inet-vpn unicast
+set protocols bgp group INTERNAL family inet6-vpn unicast
+
+# Configure BGP in VRF
+set routing-instances CUSTOMER-A protocols bgp group CE type external
+set routing-instances CUSTOMER-A protocols bgp group CE peer-as 65002
+set routing-instances CUSTOMER-A protocols bgp group CE neighbor 172.16.1.254
+
+commit
+
+# Show BGP information
+show bgp summary
+show bgp neighbor
+show route protocol bgp
+show route receive-protocol bgp 192.168.1.254
+
+### Routing Policy Configuration
+
+# Configure prefix list
+set policy-options prefix-list ALLOWED-PREFIXES 10.0.0.0/8
+set policy-options prefix-list ALLOWED-PREFIXES 172.16.0.0/12
+
+# Configure route filter
+set policy-options policy-statement BGP-IMPORT term 1 from route-filter 10.0.0.0/8 orlonger
+set policy-options policy-statement BGP-IMPORT term 1 then accept
+set policy-options policy-statement BGP-IMPORT term 2 then reject
+
+set policy-options policy-statement BGP-EXPORT term 1 from protocol static
+set policy-options policy-statement BGP-EXPORT term 1 from route-filter 10.0.0.0/8 exact
+set policy-options policy-statement BGP-EXPORT term 1 then accept
+set policy-options policy-statement BGP-EXPORT term 2 then reject
+
+# Configure community
+set policy-options community CUSTOMER-A members 65000:100
+
+# Configure AS path
+set policy-options as-path ORIGIN ".* 65001$"
+
+# Configure policy with BGP attributes
+set policy-options policy-statement SET-LP term 1 from route-filter 10.0.0.0/8 orlonger
+set policy-options policy-statement SET-LP term 1 then local-preference 200
+set policy-options policy-statement SET-LP term 1 then accept
+
+commit
+
+# Show policy
+show policy
+
+### Firewall Filters (ACLs)
+
+# Configure firewall filter for IPv4
+set firewall family inet filter PROTECT-RE term ACCEPT-SSH from protocol tcp
+set firewall family inet filter PROTECT-RE term ACCEPT-SSH from destination-port 22
+set firewall family inet filter PROTECT-RE term ACCEPT-SSH then accept
+
+set firewall family inet filter PROTECT-RE term ACCEPT-ICMP from protocol icmp
+set firewall family inet filter PROTECT-RE term ACCEPT-ICMP then accept
+
+set firewall family inet filter PROTECT-RE term DENY-ALL then log
+set firewall family inet filter PROTECT-RE term DENY-ALL then discard
+
+# Apply filter to interface
+set interfaces ge-0/1/0 unit 0 family inet filter input PROTECT-RE
+
+# Apply filter to loopback (protect routing engine)
+set interfaces lo0 unit 0 family inet filter input PROTECT-RE
+
+# Configure firewall filter for IPv6
+set firewall family inet6 filter PROTECT-RE-V6 term ACCEPT-SSH from next-header tcp
+set firewall family inet6 filter PROTECT-RE-V6 term ACCEPT-SSH from destination-port 22
+set firewall family inet6 filter PROTECT-RE-V6 term ACCEPT-SSH then accept
+
+commit
+
+# Show firewall filter
+show firewall filter PROTECT-RE
+show firewall log
+
+### NAT Configuration
+
+# Configure source NAT (outbound)
+set services nat source pool INTERNET-POOL address 203.0.113.10/32 to 203.0.113.20/32
+
+set services nat source rule-set TRUST-TO-INTERNET from zone trust
+set services nat source rule-set TRUST-TO-INTERNET to zone internet
+set services nat source rule-set TRUST-TO-INTERNET rule NAT-RULE match source-address 10.0.0.0/8
+set services nat source rule-set TRUST-TO-INTERNET rule NAT-RULE then source-nat pool INTERNET-POOL
+
+# Configure destination NAT (inbound)
+set services nat destination pool WEB-SERVER address 10.100.0.10/32
+set services nat destination rule-set INTERNET-TO-DMZ from zone internet
+set services nat destination rule-set INTERNET-TO-DMZ rule WEB-NAT match destination-address 203.0.113.50/32
+set services nat destination rule-set INTERNET-TO-DMZ rule WEB-NAT match destination-port 80
+set services nat destination rule-set INTERNET-TO-DMZ rule WEB-NAT then destination-nat pool WEB-SERVER
+
+# Configure static NAT (1-to-1)
+set services nat static rule-set STATIC-NAT rule SERVER1 match destination-address 203.0.113.30/32
+set services nat static rule-set STATIC-NAT rule SERVER1 then static-nat prefix 10.100.0.20/32
+
+commit
+
+# Show NAT information
+show services nat source-pool
+show services nat source-rule
+
+### MPLS Configuration
+
+# Configure MPLS on interface
+set interfaces ge-0/1/0 unit 0 family mpls
+
+# Configure MPLS protocols
+set protocols mpls interface ge-0/1/0.0
+
+# Configure LDP
+set protocols ldp interface ge-0/1/0.0
+set protocols ldp interface lo0.0
+
+# Configure RSVP for traffic engineering
+set protocols rsvp interface ge-0/1/0.0 bandwidth 1g
+
+# Configure MPLS LSP
+set protocols mpls label-switched-path TO-REMOTE-PE to 10.1.1.2
+set protocols mpls label-switched-path TO-REMOTE-PE bandwidth 100m
+set protocols mpls label-switched-path TO-REMOTE-PE primary VIA-CORE
+
+set protocols mpls path VIA-CORE 10.1.1.10 strict
+set protocols mpls path VIA-CORE 10.1.1.2 strict
+
+commit
+
+# Show MPLS information
+show mpls lsp
+show ldp neighbor
+show rsvp neighbor
+
+### VRRP Configuration
+
+# Configure VRRP on interface
+set interfaces irb unit 100 family inet address 10.100.0.2/24 vrrp-group 1 virtual-address 10.100.0.1
+set interfaces irb unit 100 family inet address 10.100.0.2/24 vrrp-group 1 priority 150
+set interfaces irb unit 100 family inet address 10.100.0.2/24 vrrp-group 1 preempt
+set interfaces irb unit 100 family inet address 10.100.0.2/24 vrrp-group 1 accept-data
+
+commit
+
+# Show VRRP status
+show vrrp
+show vrrp detail
+
+### Class of Service (QoS)
+
+# Configure classifier
+set class-of-service classifiers dscp CLASSIFY-VOICE forwarding-class expedited-forwarding loss-priority low code-points ef
+
+# Configure rewrite rules
+set class-of-service rewrite-rules dscp REWRITE-VOICE forwarding-class expedited-forwarding loss-priority low code-point ef
+
+# Configure scheduler
+set class-of-service schedulers VOICE-SCHED transmit-rate percent 30
+set class-of-service schedulers VOICE-SCHED buffer-size percent 30
+set class-of-service schedulers VOICE-SCHED priority strict-high
+
+# Configure traffic control profile
+set class-of-service traffic-control-profiles QOS-PROFILE scheduler-map QOS-MAP
+
+# Apply to interface
+set class-of-service interfaces ge-0/1/0 unit 0 classifiers dscp CLASSIFY-VOICE
+set class-of-service interfaces ge-0/1/0 unit 0 rewrite-rules dscp REWRITE-VOICE
+
+commit
+
+# Show CoS information
+show class-of-service interface
+
+### Multicast Configuration
+
+# Enable PIM on interfaces
+set protocols pim interface ge-0/1/0.0 mode sparse
+set protocols pim interface ge-0/1/0.0 version 2
+
+# Configure PIM rendezvous point
+set protocols pim rp static address 10.1.1.1
+
+# Configure IGMP
+set protocols igmp interface irb.100 version 3
+
+commit
+
+# Show multicast information
+show pim neighbors
+show pim join
+show igmp group
+
+Verification and Troubleshooting Commands
+------------------------------------------
+
+### Layer 2 Verification
+
+# Show bridge domain information
+show bridge domain
+show bridge mac-table
+
+# Show VPLS connections
+show vpls connections
+show vpls connections instance VPLS-CUSTOMER-A extensive
+
+# Show L2Circuit
+show l2circuit connections
+show l2circuit connections extensive
+
+# Show EVPN
+show evpn database
+show evpn instance extensive
+
+# Show LAG status
+show lacp interfaces
+show interfaces ae0 extensive
+
+# Show spanning tree
+show spanning-tree bridge
+show spanning-tree interface
+
+### Layer 3 Verification
+
+# Show interface status
+show interfaces terse
+show interfaces ge-0/1/0
+show interfaces ge-0/1/0 extensive
+
+# Show routing table
+show route
+show route protocol ospf
+show route protocol bgp
+show route table CUSTOMER-A.inet.0
+
+# Show ARP table
+show arp
+show arp no-resolve
+
+# Show IPv6 neighbors
+show ipv6 neighbors
+
+# Test connectivity
+ping 8.8.8.8
+ping 8.8.8.8 source 192.168.1.1 count 100 rapid
+traceroute 8.8.8.8
+
+# Show protocol information
+show ospf neighbor
+show isis adjacency
+show bgp summary
+show bgp neighbor
+
+# Show MPLS
+show mpls lsp
+show mpls interface
+show ldp session
+
+### System Information
+
+# Show version
+show version
+show version brief
+
+# Show chassis hardware
+show chassis hardware
+show chassis environment
+
+# Show system information
+show system uptime
+show system alarms
+show system storage
+
+# Show processes
+show system processes extensive
+
+# Show logging
+show log messages
+show log messages | match error
+
+### Real-time Monitoring
+
+# Monitor interface traffic
+monitor interface ge-0/1/0
+
+# Monitor traffic on interface
+monitor traffic interface ge-0/1/0
+
+# Monitor routing protocols
+monitor start ospf
+monitor start bgp
+monitor stop
+
+# Monitor system logs
+monitor start messages
+monitor stop
+
+### Configuration Management
+
+# Show configuration in set format
+show configuration | display set
+
+# Show configuration in XML format
+show configuration | display xml
+
+# Show configuration with annotations
+show configuration | display inheritance
+
+# Save configuration to file
+show configuration | save /var/tmp/config.txt
+show configuration | display set | save /var/tmp/config-set.txt
+
+# Load configuration
+load override /var/tmp/config.txt
+load merge /var/tmp/config.txt
+load patch /var/tmp/config.txt
+
+# Compare configurations
+show system rollback compare 0 1
+
+Documentation References
+------------------------
+
+[1] Juniper Networks. (2024). Junos OS Configuration Guide for MX Series.
+    https://www.juniper.net/documentation/us/en/software/junos/mx-series/
+    Comprehensive configuration guide for MX Series routers.
+
+[2] Juniper Networks. (2024). MX Series Interface Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet-switches/
+    Interface configuration for MX Series.
+
+[3] Juniper Networks. (2024). Layer 2 Services and VPLS Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/vpls/
+    VPLS, L2Circuit, EVPN, and Layer 2 services.
+
+[4] Juniper Networks. (2024). Routing Protocols Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/routing-overview/
+    OSPF, IS-IS, BGP configuration.
+
+[5] Juniper Networks. (2024). MPLS Applications Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/mpls/
+    MPLS, LDP, RSVP, and traffic engineering.
+
+[6] Juniper Networks. (2024). VPN Configuration Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/vpn-l3/
+    Layer 3 VPN and VRF configuration.
+
+[7] Garrett, P., & Woodberg, B. (2012). Juniper MX Series.
+    O'Reilly Media. ISBN: 978-1449320713
+    Comprehensive guide to MX Series routers.
+
+[8] Juniper Networks. (2024). Class of Service User Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/cos/
+    QoS configuration for MX Series.
+
+[9] Juniper Networks. (2024). High Availability User Guide.
+    https://www.juniper.net/documentation/us/en/software/junos/high-availability/
+    VRRP, GRES, NSR, and redundancy.
+
+[10] Juniper Networks. (2024). Security Configuration Guide.
+     https://www.juniper.net/documentation/us/en/software/junos/security-services/
+     Firewall filters, NAT, and security features.
+
+[11] Marschke, D., Reynolds, H., & Jander, K. (2013). JUNOS Enterprise Routing.
+     O'Reilly Media. ISBN: 978-1449398637
+     Enterprise routing with Junos.
+
+[12] Day One: MPLS for Enterprise Engineers. Juniper Networks.
+     https://www.juniper.net/us/en/training/jnbooks/day-one/
+     Practical MPLS configuration examples.
+
+[13] Juniper Networks. (2024). Troubleshooting Guide.
+     https://www.juniper.net/documentation/us/en/software/junos/troubleshooting/
+     Troubleshooting common issues on MX Series.
+
+[14] Juniper Learning Portal.
+     https://learningportal.juniper.net/
+     Training resources and documentation.
+
+MX Series Specific Features
+----------------------------
+
+1. Trio Chipset Architecture:
+   - Advanced packet forwarding engine
+   - Supports high-density 100GE/400GE interfaces
+   - Hardware-based packet processing
+
+2. Inline Services:
+   - Integrated services cards for NAT, firewall, IPsec
+   - Deep packet inspection capabilities
+   - Carrier-grade NAT (CGNAT)
+
+3. Flexible Interface Naming:
+   - Physical: ge-FPC/PIC/PORT (e.g., ge-0/0/0)
+   - Logical: Physical.Unit (e.g., ge-0/0/0.100)
+   - Aggregated: ae<number> (e.g., ae0)
+
+4. Unified ISSU:
+   - In-Service Software Upgrade with minimal disruption
+   - Graceful Routing Engine Switchover (GRES)
+   - Nonstop Active Routing (NSR)
+
+5. Enhanced Subscriber Management:
+   - DHCPv4/v6 local server and relay
+   - PPPoE termination
+   - RADIUS/LDAP integration
+
+6. Advanced MPLS Services:
+   - L2VPN (VPLS, L2Circuit, EVPN)
+   - L3VPN (BGP/MPLS VPN)
+   - VPWS, H-VPLS
+   - Seamless MPLS
+
+Notes
+-----
+
+- MX Series is designed for carrier-edge and service provider applications
+- Always commit changes for them to take effect
+- Use "commit check" to validate configuration before committing
+- Configuration can be in hierarchy or set format
+- Use "show | compare" to review changes before committing
+- Private configuration mode allows concurrent configuration by multiple users
+- Rollback capability provides easy recovery from configuration errors
+- MX Series supports both bridge domains (Layer 2 switching) and routing
+- Use "request system snapshot" to backup the system before major changes
+- Monitor performance with "show chassis routing-engine" and "show chassis fpc"

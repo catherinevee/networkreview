@@ -1,0 +1,68 @@
+IP Packet Structure
+===================
+
+An IP (Internet Protocol) packet consists of two main components: the header and the payload (data). The structure varies between IPv4 and IPv6.
+
+IPv4 Packet Structure
+---------------------
+
+An IPv4 header is typically 20 bytes (without options) and contains the following fields:
+
+1. Version (4 bits): Identifies the IP version (value: 4 for IPv4)
+2. Internet Header Length (IHL) (4 bits): Specifies the header length in 32-bit words
+3. Differentiated Services Code Point (DSCP) (6 bits): Used for Quality of Service (QoS)
+4. Explicit Congestion Notification (ECN) (2 bits): Provides end-to-end congestion notification
+5. Total Length (16 bits): Entire packet size in bytes, including header and data
+6. Identification (16 bits): Used for uniquely identifying fragments of an original IP datagram
+7. Flags (3 bits): Control fragmentation (Reserved, Don't Fragment, More Fragments)
+8. Fragment Offset (13 bits): Indicates the position of the fragment in the original datagram
+9. Time to Live (TTL) (8 bits): Limits packet lifetime to prevent routing loops
+10. Protocol (8 bits): Identifies the next level protocol (e.g., 6 for TCP, 17 for UDP)
+11. Header Checksum (16 bits): Error-checking of the header
+12. Source IP Address (32 bits): IP address of the sender
+13. Destination IP Address (32 bits): IP address of the receiver
+14. Options (variable): Optional fields for special handling (rarely used)
+15. Padding: Ensures the header ends on a 32-bit boundary
+
+IPv6 Packet Structure
+---------------------
+
+IPv6 has a simplified header of fixed 40 bytes:
+
+1. Version (4 bits): IP version (value: 6 for IPv6)
+2. Traffic Class (8 bits): Similar to DSCP in IPv4, for QoS
+3. Flow Label (20 bits): Used for labeling sequences of packets
+4. Payload Length (16 bits): Size of the payload in bytes
+5. Next Header (8 bits): Identifies the type of header following the IPv6 header
+6. Hop Limit (8 bits): Replaces TTL in IPv4
+7. Source Address (128 bits): IPv6 address of the sender
+8. Destination Address (128 bits): IPv6 address of the receiver
+
+Key Differences
+---------------
+
+- IPv6 removes the header checksum (relegated to link layer and transport layer)
+- IPv6 has no fragmentation fields in the main header (handled via extension headers)
+- IPv6 addresses are 128 bits vs IPv4's 32 bits
+- IPv6 header is fixed length, simplifying processing
+
+References
+----------
+
+[1] RFC 791 - Internet Protocol (IPv4)
+    https://datatracker.ietf.org/doc/html/rfc791
+    Postel, J. (1981). Section 3.1 describes the IPv4 header format.
+
+[2] RFC 8200 - Internet Protocol, Version 6 (IPv6) Specification
+    https://datatracker.ietf.org/doc/html/rfc8200
+    Deering, S. and R. Hinden (2017). Section 3 describes the IPv6 header format.
+
+[3] RFC 2474 - Definition of the Differentiated Services Field (DS Field)
+    https://datatracker.ietf.org/doc/html/rfc2474
+    Nichols, K., et al. (1998). Describes DSCP field usage.
+
+[4] Tanenbaum, A. S., & Wetherall, D. J. (2011). Computer Networks (5th ed.).
+    Prentice Hall. Chapter 5 covers the Network Layer and IP packet structure.
+
+[5] Kurose, J. F., & Ross, K. W. (2021). Computer Networking: A Top-Down Approach (8th ed.).
+    Pearson. Section 4.3 details IPv4 and IPv6 datagram formats.

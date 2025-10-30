@@ -1,0 +1,158 @@
+OSI Model: Layer 2 (Data Link) and Layer 3 (Network)
+====================================================
+
+Layer 2: Data Link Layer
+-------------------------
+
+The Data Link Layer provides node-to-node data transfer and handles error correction from the physical layer. It is responsible for reliable transmission of data frames between two nodes connected by a physical layer.
+
+Key Functions:
+
+1. Framing
+   - Encapsulates network layer packets into frames
+   - Adds header and trailer information (source/destination MAC addresses, error detection)
+   - Defines frame boundaries using special bit patterns or byte sequences
+
+2. Physical Addressing (MAC Addressing)
+   - Uses Media Access Control (MAC) addresses for device identification
+   - MAC addresses are 48-bit (6 bytes) hardware addresses burned into network interface cards
+   - Format: XX:XX:XX:XX:XX:XX (hexadecimal)
+
+3. Media Access Control
+   - Determines when devices can transmit on shared medium
+   - CSMA/CD (Carrier Sense Multiple Access with Collision Detection) for Ethernet
+   - CSMA/CA (Collision Avoidance) for wireless networks
+
+4. Error Detection and Correction
+   - Uses Frame Check Sequence (FCS) with CRC (Cyclic Redundancy Check)
+   - Detects corrupted frames and may request retransmission
+   - Some protocols provide Forward Error Correction (FEC)
+
+5. Flow Control
+   - Prevents fast sender from overwhelming slow receiver
+   - Uses techniques like stop-and-wait or sliding window protocols
+
+Sublayers:
+- LLC (Logical Link Control): Provides interface to network layer, handles flow control and error control
+- MAC (Media Access Control): Controls how devices on network gain access to medium
+
+Common Layer 2 Protocols:
+- Ethernet (IEEE 802.3)
+- Wi-Fi (IEEE 802.11)
+- PPP (Point-to-Point Protocol)
+- HDLC (High-Level Data Link Control)
+- Frame Relay
+- ATM (Asynchronous Transfer Mode)
+
+Layer 3: Network Layer
+-----------------------
+
+The Network Layer is responsible for packet forwarding, routing through intermediate routers, and logical addressing. It provides the functional and procedural means for transferring variable-length data sequences from a source to a destination host via one or more networks.
+
+Key Functions:
+
+1. Logical Addressing
+   - Assigns logical addresses (IP addresses) to devices
+   - IPv4: 32-bit addresses (e.g., 192.168.1.1)
+   - IPv6: 128-bit addresses (e.g., 2001:0db8:85a3::8a2e:0370:7334)
+
+2. Routing
+   - Determines the best path for data to travel from source to destination
+   - Uses routing algorithms (Distance Vector, Link State, Path Vector)
+   - Routing protocols: RIP, OSPF, EIGRP, BGP, IS-IS
+   - Maintains routing tables with next-hop information
+
+3. Packet Forwarding
+   - Forwards packets based on destination IP address
+   - Examines routing table to determine output interface
+   - Decrements TTL (Time to Live) or Hop Limit with each hop
+
+4. Fragmentation and Reassembly
+   - Breaks large packets into smaller fragments to fit MTU (Maximum Transmission Unit)
+   - Reassembles fragments at destination
+   - IPv4: Routers can fragment; IPv6: Only source fragments via Path MTU Discovery
+
+5. Error Handling and Diagnostics
+   - ICMP (Internet Control Message Protocol) for error reporting
+   - Provides feedback about network problems (destination unreachable, time exceeded)
+   - Diagnostic tools: ping, traceroute
+
+6. Quality of Service (QoS)
+   - Prioritizes certain types of traffic
+   - Uses DSCP (Differentiated Services Code Point) field
+   - Supports traffic classification and bandwidth management
+
+Common Layer 3 Protocols:
+- IPv4 (Internet Protocol version 4)
+- IPv6 (Internet Protocol version 6)
+- ICMP (Internet Control Message Protocol)
+- ICMPv6
+- IPsec (for secure communications)
+- IGMP (Internet Group Management Protocol)
+- ARP (Address Resolution Protocol) - bridges Layer 2 and Layer 3
+
+Interaction Between Layer 2 and Layer 3
+----------------------------------------
+
+Layer 3 packets are encapsulated within Layer 2 frames for transmission:
+
+1. Layer 3 creates packets with source and destination IP addresses
+2. Layer 2 encapsulates these packets into frames with MAC addresses
+3. ARP (or NDP in IPv6) resolves IP addresses to MAC addresses
+4. At each router hop:
+   - Layer 2 frame is stripped off
+   - Layer 3 packet is examined
+   - New Layer 2 frame is created for next hop
+   - MAC addresses change at each hop, but IP addresses remain constant (unless NAT is involved)
+
+Example Flow:
+- Application generates data
+- Transport layer (Layer 4) adds TCP/UDP header
+- Network layer (Layer 3) adds IP header with source/destination IP
+- Data Link layer (Layer 2) adds Ethernet header with source/destination MAC
+- Physical layer (Layer 1) transmits bits on medium
+
+References
+----------
+
+[1] ISO/IEC 7498-1:1994 - Information technology - Open Systems Interconnection -
+    Basic Reference Model: The Basic Model
+    International Organization for Standardization (1994).
+
+[2] Tanenbaum, A. S., & Wetherall, D. J. (2011). Computer Networks (5th ed.).
+    Prentice Hall.
+    - Chapter 3: The Data Link Layer
+    - Chapter 5: The Network Layer
+
+[3] Kurose, J. F., & Ross, K. W. (2021). Computer Networking: A Top-Down Approach (8th ed.).
+    Pearson.
+    - Section 5.1-5.4: The Link Layer
+    - Section 4.1-4.4: The Network Layer
+
+[4] RFC 791 - Internet Protocol (IPv4)
+    https://datatracker.ietf.org/doc/html/rfc791
+    Postel, J. (1981). Defines IPv4 protocol specification.
+
+[5] RFC 8200 - Internet Protocol, Version 6 (IPv6) Specification
+    https://datatracker.ietf.org/doc/html/rfc8200
+    Deering, S. and R. Hinden (2017). Defines IPv6 protocol specification.
+
+[6] IEEE 802.3-2018 - IEEE Standard for Ethernet
+    Institute of Electrical and Electronics Engineers (2018).
+    Defines Ethernet physical layer and data link layer specifications.
+
+[7] IEEE 802.11-2020 - IEEE Standard for Wireless LAN
+    Institute of Electrical and Electronics Engineers (2020).
+    Defines Wi-Fi physical and data link layer specifications.
+
+[8] RFC 826 - An Ethernet Address Resolution Protocol
+    https://datatracker.ietf.org/doc/html/rfc826
+    Plummer, D. (1982). Describes ARP for mapping IP to MAC addresses.
+
+[9] Forouzan, B. A. (2017). Data Communications and Networking (5th ed.).
+    McGraw-Hill Education.
+    - Chapter 11: Data Link Control
+    - Chapter 20: Network Layer: Internet Protocol
+
+[10] Cisco Networking Academy. (2020). CCNA 200-301 Official Cert Guide Library.
+     Cisco Press. Comprehensive coverage of Layer 2 and Layer 3 technologies.

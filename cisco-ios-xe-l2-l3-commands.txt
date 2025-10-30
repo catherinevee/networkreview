@@ -1,0 +1,668 @@
+Cisco IOS-XE CLI Commands for Layer 2 and Layer 3 Configuration
+=================================================================
+
+This document provides common Cisco IOS-XE CLI commands for configuring Layer 2 and Layer 3 functionality on Cisco network devices.
+
+Basic CLI Navigation
+--------------------
+
+# Enter privileged EXEC mode
+enable
+
+# Enter global configuration mode
+configure terminal
+
+# Exit configuration mode
+exit
+end
+
+# Show running configuration
+show running-config
+
+# Show startup configuration
+show startup-config
+
+# Save configuration
+write memory
+copy running-config startup-config
+
+# Show command history
+show history
+
+Layer 2 Configuration
+---------------------
+
+### Interface Configuration (Access Mode)
+
+# Configure interface as access port
+interface GigabitEthernet1/0/1
+ description Access Port to Workstation
+ switchport mode access
+ switchport access vlan 100
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ no shutdown
+
+# Disable interface
+interface GigabitEthernet1/0/1
+ shutdown
+
+# Enable interface
+interface GigabitEthernet1/0/1
+ no shutdown
+
+### Interface Configuration (Trunk Mode)
+
+# Configure interface as trunk port
+interface GigabitEthernet1/0/2
+ description Trunk to Distribution Switch
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,100-200
+ switchport trunk native vlan 1
+ no shutdown
+
+# Add VLANs to trunk
+interface GigabitEthernet1/0/2
+ switchport trunk allowed vlan add 300
+
+# Remove VLANs from trunk
+interface GigabitEthernet1/0/2
+ switchport trunk allowed vlan remove 300
+
+# Allow all VLANs on trunk
+interface GigabitEthernet1/0/2
+ switchport trunk allowed vlan all
+
+### VLAN Configuration
+
+# Create VLAN
+vlan 100
+ name Engineering_Department
+
+# Create multiple VLANs
+vlan 200
+ name Sales_Department
+vlan 300
+ name Guest_Network
+
+# Delete VLAN
+no vlan 300
+
+# Show VLAN information
+show vlan brief
+show vlan id 100
+
+# Show VLAN database
+show vlan
+
+### Spanning Tree Protocol (STP)
+
+# Configure spanning tree mode (PVST+, Rapid-PVST+, MST)
+spanning-tree mode rapid-pvst
+
+# Configure bridge priority (lower is better, multiples of 4096)
+spanning-tree vlan 100 priority 4096
+
+# Set switch as root bridge
+spanning-tree vlan 100 root primary
+
+# Set switch as secondary root bridge
+spanning-tree vlan 100 root secondary
+
+# Configure port as edge port (portfast)
+interface GigabitEthernet1/0/1
+ spanning-tree portfast
+
+# Enable BPDU Guard (disables port if BPDU received)
+interface GigabitEthernet1/0/1
+ spanning-tree bpduguard enable
+
+# Enable Root Guard (prevents becoming root through this port)
+interface GigabitEthernet1/0/2
+ spanning-tree guard root
+
+# Configure port cost
+interface GigabitEthernet1/0/2
+ spanning-tree vlan 100 cost 4
+
+# Configure port priority
+interface GigabitEthernet1/0/2
+ spanning-tree vlan 100 port-priority 64
+
+# Show spanning tree status
+show spanning-tree
+show spanning-tree vlan 100
+show spanning-tree interface GigabitEthernet1/0/1
+
+### Link Aggregation (EtherChannel/LAG)
+
+# Configure EtherChannel with LACP
+interface range GigabitEthernet1/0/3-4
+ description EtherChannel to Core Switch
+ channel-group 1 mode active
+ no shutdown
+
+# Configure EtherChannel with PAgP (Cisco proprietary)
+interface range GigabitEthernet1/0/5-6
+ channel-group 2 mode desirable
+
+# Configure EtherChannel as static (no negotiation protocol)
+interface range GigabitEthernet1/0/7-8
+ channel-group 3 mode on
+
+# Configure Port-Channel interface as trunk
+interface Port-Channel1
+ description EtherChannel Trunk
+ switchport mode trunk
+ switchport trunk allowed vlan all
+
+# Configure Port-Channel interface as access
+interface Port-Channel2
+ switchport mode access
+ switchport access vlan 100
+
+# Configure LACP port priority
+interface GigabitEthernet1/0/3
+ lacp port-priority 100
+
+# Show EtherChannel summary
+show etherchannel summary
+show etherchannel port-channel
+show lacp neighbor
+
+### VTP (VLAN Trunking Protocol)
+
+# Configure VTP mode
+vtp mode server
+vtp mode client
+vtp mode transparent
+
+# Configure VTP domain
+vtp domain COMPANY
+
+# Configure VTP password
+vtp password secretpass
+
+# Configure VTP version
+vtp version 2
+
+# Show VTP status
+show vtp status
+show vtp password
+
+### MAC Address Table
+
+# Show MAC address table
+show mac address-table
+show mac address-table vlan 100
+show mac address-table interface GigabitEthernet1/0/1
+
+# Configure static MAC address
+mac address-table static 0011.2233.4455 vlan 100 interface GigabitEthernet1/0/1
+
+# Clear MAC address table
+clear mac address-table dynamic
+
+# Configure MAC aging time
+mac address-table aging-time 600
+
+### Port Security
+
+# Configure port security
+interface GigabitEthernet1/0/1
+ switchport mode access
+ switchport access vlan 100
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation shutdown
+ switchport port-security mac-address sticky
+
+# Configure specific MAC address
+interface GigabitEthernet1/0/1
+ switchport port-security mac-address 0011.2233.4455
+
+# Show port security
+show port-security
+show port-security interface GigabitEthernet1/0/1
+show port-security address
+
+# Recover from err-disabled state
+interface GigabitEthernet1/0/1
+ shutdown
+ no shutdown
+
+# Enable automatic recovery
+errdisable recovery cause psecure-violation
+errdisable recovery interval 300
+
+### Storm Control
+
+# Configure storm control
+interface GigabitEthernet1/0/1
+ storm-control broadcast level 80
+ storm-control multicast level 80
+ storm-control unicast level 80
+
+# Show storm control
+show storm-control
+
+Layer 3 Configuration
+---------------------
+
+### Interface Configuration (Routed/Layer 3)
+
+# Configure Layer 3 interface (routed port on switch)
+interface GigabitEthernet1/0/10
+ description Layer 3 Interface to Router
+ no switchport
+ ip address 192.168.1.1 255.255.255.0
+ no shutdown
+
+# Configure secondary IP address
+interface GigabitEthernet1/0/10
+ ip address 192.168.1.2 255.255.255.0 secondary
+
+# Configure IPv6 address
+interface GigabitEthernet1/0/10
+ ipv6 address 2001:db8::1/64
+ ipv6 enable
+
+# Enable IP routing on switch
+ip routing
+
+# Enable IPv6 routing
+ipv6 unicast-routing
+
+### SVI (Switched Virtual Interface) - VLAN Interface
+
+# Create SVI (VLAN interface)
+interface Vlan100
+ description Gateway for VLAN 100
+ ip address 10.100.0.1 255.255.255.0
+ no shutdown
+
+# Configure IPv6 on SVI
+interface Vlan100
+ ipv6 address 2001:db8:100::1/64
+
+# Configure HSRP for redundancy
+interface Vlan100
+ ip address 10.100.0.2 255.255.255.0
+ standby 1 ip 10.100.0.1
+ standby 1 priority 150
+ standby 1 preempt
+
+# Show interface status
+show ip interface brief
+show ip interface Vlan100
+show interfaces status
+
+### Static Routes
+
+# Configure static route
+ip route 0.0.0.0 0.0.0.0 192.168.1.254
+
+# Configure static route with specific network
+ip route 10.0.0.0 255.0.0.0 192.168.1.253
+
+# Configure static route with administrative distance
+ip route 0.0.0.0 0.0.0.0 192.168.1.253 200
+
+# Configure IPv6 static route
+ipv6 route ::/0 2001:db8::254
+
+# Show routing table
+show ip route
+show ip route static
+show ipv6 route
+
+### Dynamic Routing - OSPF
+
+# Enable OSPF
+router ospf 1
+ router-id 1.1.1.1
+ network 192.168.1.0 0.0.0.255 area 0
+ network 10.100.0.0 0.0.255.255 area 0
+ passive-interface Vlan100
+
+# Configure OSPF on specific interface
+interface GigabitEthernet1/0/10
+ ip ospf 1 area 0
+ ip ospf cost 100
+ ip ospf priority 255
+
+# Configure OSPF authentication
+interface GigabitEthernet1/0/10
+ ip ospf authentication message-digest
+ ip ospf message-digest-key 1 md5 secretkey
+
+# Configure OSPF area authentication
+router ospf 1
+ area 0 authentication message-digest
+
+# Show OSPF information
+show ip ospf neighbor
+show ip ospf interface
+show ip ospf database
+show ip protocols
+
+# Configure OSPFv3 for IPv6
+ipv6 router ospf 1
+ router-id 1.1.1.1
+
+interface GigabitEthernet1/0/10
+ ipv6 ospf 1 area 0
+
+### Dynamic Routing - EIGRP
+
+# Enable EIGRP
+router eigrp 100
+ network 192.168.1.0 0.0.0.255
+ network 10.0.0.0 0.255.255.255
+ passive-interface Vlan100
+ no auto-summary
+
+# Configure EIGRP named mode (modern configuration)
+router eigrp COMPANY
+ address-family ipv4 unicast autonomous-system 100
+  network 192.168.1.0 0.0.0.255
+  network 10.0.0.0 0.255.255.255
+ exit-address-family
+
+# Configure EIGRP authentication
+interface GigabitEthernet1/0/10
+ ip authentication mode eigrp 100 md5
+ ip authentication key-chain eigrp 100 EIGRP-KEYS
+
+key chain EIGRP-KEYS
+ key 1
+  key-string secretkey
+
+# Show EIGRP information
+show ip eigrp neighbors
+show ip eigrp topology
+show ip eigrp interfaces
+
+### Dynamic Routing - BGP
+
+# Configure BGP
+router bgp 65000
+ bgp router-id 1.1.1.1
+ neighbor 192.168.1.254 remote-as 65001
+ neighbor 192.168.1.254 description ISP-Connection
+ !
+ address-family ipv4
+  network 10.0.0.0 mask 255.0.0.0
+  neighbor 192.168.1.254 activate
+ exit-address-family
+
+# Configure BGP authentication
+router bgp 65000
+ neighbor 192.168.1.254 password secretkey
+
+# Configure iBGP
+router bgp 65000
+ neighbor 10.1.1.1 remote-as 65000
+ neighbor 10.1.1.1 update-source Loopback0
+
+# Show BGP information
+show ip bgp summary
+show ip bgp neighbors
+show ip bgp
+
+### Access Control Lists (ACLs)
+
+# Standard ACL (numbered)
+access-list 10 permit 192.168.1.0 0.0.0.255
+access-list 10 deny any
+
+# Standard ACL (named)
+ip access-list standard ALLOWED-NETWORKS
+ permit 192.168.1.0 0.0.0.255
+ permit 10.0.0.0 0.255.255.255
+ deny any log
+
+# Extended ACL (numbered)
+access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 80
+access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 443
+access-list 100 deny ip any any log
+
+# Extended ACL (named)
+ip access-list extended FIREWALL-RULES
+ permit tcp 192.168.1.0 0.0.0.255 any eq 22
+ permit tcp 192.168.1.0 0.0.0.255 any eq www
+ permit tcp 192.168.1.0 0.0.0.255 any eq 443
+ permit icmp any any echo
+ permit icmp any any echo-reply
+ deny ip any any log
+
+# Apply ACL to interface
+interface GigabitEthernet1/0/10
+ ip access-group FIREWALL-RULES in
+
+# Show ACL
+show access-lists
+show ip access-lists FIREWALL-RULES
+show ip interface GigabitEthernet1/0/10
+
+### NAT Configuration
+
+# Configure inside interface
+interface Vlan100
+ ip nat inside
+
+# Configure outside interface
+interface GigabitEthernet1/0/10
+ ip nat outside
+
+# Static NAT (one-to-one)
+ip nat inside source static 10.100.0.10 203.0.113.10
+
+# Dynamic NAT with pool
+ip nat pool PUBLIC-POOL 203.0.113.10 203.0.113.20 netmask 255.255.255.0
+ip nat inside source list 1 pool PUBLIC-POOL
+
+access-list 1 permit 10.0.0.0 0.255.255.255
+
+# PAT (Port Address Translation / NAT Overload)
+ip nat inside source list 1 interface GigabitEthernet1/0/10 overload
+
+# Show NAT translations
+show ip nat translations
+show ip nat statistics
+
+### DHCP Configuration
+
+# Configure DHCP pool
+ip dhcp pool VLAN100-POOL
+ network 10.100.0.0 255.255.255.0
+ default-router 10.100.0.1
+ dns-server 8.8.8.8 8.8.4.4
+ lease 7
+
+# Exclude addresses from DHCP
+ip dhcp excluded-address 10.100.0.1 10.100.0.10
+
+# Show DHCP information
+show ip dhcp binding
+show ip dhcp pool
+
+# Configure DHCP relay (IP helper)
+interface Vlan100
+ ip helper-address 10.0.0.10
+
+### VRF (Virtual Routing and Forwarding)
+
+# Create VRF
+ip vrf CUSTOMER-A
+ rd 65000:100
+ route-target export 65000:100
+ route-target import 65000:100
+
+# Assign interface to VRF
+interface GigabitEthernet1/0/15
+ ip vrf forwarding CUSTOMER-A
+ ip address 172.16.1.1 255.255.255.0
+
+# Configure static route in VRF
+ip route vrf CUSTOMER-A 0.0.0.0 0.0.0.0 172.16.1.254
+
+# Show VRF information
+show ip vrf
+show ip vrf interfaces
+show ip route vrf CUSTOMER-A
+
+# Ping from VRF
+ping vrf CUSTOMER-A 172.16.1.254
+
+Verification and Troubleshooting Commands
+------------------------------------------
+
+### Layer 2 Verification
+
+# Show VLAN information
+show vlan brief
+show vlan
+
+# Show interface status
+show interfaces status
+show interfaces trunk
+
+# Show MAC address table
+show mac address-table
+show mac address-table dynamic
+
+# Show EtherChannel
+show etherchannel summary
+show etherchannel load-balance
+
+# Show spanning tree
+show spanning-tree
+show spanning-tree summary
+
+### Layer 3 Verification
+
+# Show interface information
+show ip interface brief
+show interfaces GigabitEthernet1/0/10
+show ip interface GigabitEthernet1/0/10
+
+# Show routing table
+show ip route
+show ip route summary
+
+# Show ARP table
+show ip arp
+show arp
+
+# Show IPv6 neighbors
+show ipv6 neighbors
+
+# Test connectivity
+ping 8.8.8.8
+ping 8.8.8.8 source 192.168.1.1 repeat 100
+
+traceroute 8.8.8.8
+
+# Show CDP neighbors
+show cdp neighbors
+show cdp neighbors detail
+
+# Show LLDP neighbors
+show lldp neighbors
+show lldp neighbors detail
+
+# Debug commands (use with caution in production)
+debug ip packet
+debug ip routing
+debug ip ospf events
+undebug all
+
+# Show system information
+show version
+show inventory
+show environment
+show processes cpu
+show memory
+
+# Show logging
+show logging
+show logging | include ERROR
+
+### Configuration Management
+
+# Show configuration
+show running-config
+show startup-config
+show running-config interface GigabitEthernet1/0/1
+
+# Save configuration
+write memory
+copy running-config startup-config
+
+# Backup configuration to TFTP
+copy running-config tftp://10.0.0.100/switch-config.txt
+
+# Restore configuration from TFTP
+copy tftp://10.0.0.100/switch-config.txt running-config
+
+# Show configuration differences
+show archive config differences
+
+Documentation References
+------------------------
+
+[1] Cisco Systems. (2024). Cisco IOS XE Command Reference.
+    https://www.cisco.com/c/en/us/support/ios-nx-os-software/ios-xe-17/products-command-reference-list.html
+    Official command reference for Cisco IOS-XE.
+
+[2] Cisco Systems. (2024). Cisco IOS XE Configuration Fundamentals Guide.
+    https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/fundamentals/configuration/
+    Comprehensive configuration guide for IOS-XE devices.
+
+[3] Cisco Systems. (2024). LAN Switching Configuration Guide.
+    https://www.cisco.com/c/en/us/support/switches/catalyst-9000/products-installation-and-configuration-guides-list.html
+    Layer 2 switching configuration for Catalyst switches.
+
+[4] Cisco Systems. (2024). IP Routing Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/iproute/configuration/
+    Layer 3 routing protocols and IP routing configuration.
+
+[5] Cisco Systems. (2024). Security Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/security/
+    ACLs, port security, and security features.
+
+[6] Cisco Networking Academy. (2020). CCNA 200-301 Official Cert Guide Library.
+    Cisco Press. ISBN: 978-1587147142
+    Comprehensive coverage of Cisco networking fundamentals.
+
+[7] Odom, W. (2019). CCNA 200-301 Official Cert Guide, Volume 1 and 2.
+    Cisco Press. Detailed explanation of IOS commands and concepts.
+
+[8] Cisco Systems. (2024). High Availability Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/ha/
+    HSRP, VRRP, and redundancy protocols.
+
+[9] Cisco Systems. (2024). Quality of Service Configuration Guide.
+    https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/qos/
+    QoS configuration and traffic management.
+
+[10] Cisco Learning Network.
+     https://learningnetwork.cisco.com/
+     Community resources, documentation, and learning materials.
+
+[11] Cisco Systems. (2024). Command Lookup Tool.
+     https://www.cisco.com/c/en/us/support/web/tools/command-lookup-tool/command-lookup-tool-help.html
+     Online tool for searching IOS commands.
+
+Notes
+-----
+
+- Commands shown are for Cisco IOS-XE; some may vary in IOS or IOS-XR
+- Always save configuration after making changes: write memory
+- Use "do" prefix to run EXEC commands from configuration mode: do show ip route
+- Configuration mode hierarchy: exit (one level up), end (to privileged EXEC)
+- Use "?" for context-sensitive help at any time
+- Use Tab key for command completion
+- Use Ctrl+Z to exit to privileged EXEC mode from any configuration level

@@ -1,0 +1,2367 @@
+Azure Networking Security Best Practices
+=========================================
+
+This document provides comprehensive security best practices specifically focused on Azure networking, covering network architecture, segmentation, firewalls, connectivity, monitoring, and defense-in-depth strategies for securing network infrastructure in Azure.
+
+Introduction
+------------
+
+Network security in Azure is fundamental to protecting workloads, data, and applications. Unlike traditional data centers where physical network controls are primary, Azure networking relies on software-defined networking (SDN) with virtual networks, network security groups, firewalls, and various connectivity options.
+
+Effective Azure network security requires understanding the shared responsibility model, implementing defense-in-depth strategies, and leveraging Azure's comprehensive network security services.
+
+Core Principles
+---------------
+
+### 1. Zero Trust Network Architecture
+
+Traditional Approach:
+- Trust internal networks
+- Perimeter security focused
+- Implicit trust once inside
+
+Zero Trust Approach:
+- Never trust, always verify
+- Assume breach mentality
+- Verify explicitly (identity, device, location)
+- Use least privileged access
+- Microsegmentation
+
+Azure Implementation:
+- Azure AD Conditional Access for identity verification
+- Network segmentation with NSGs and ASGs
+- Just-in-Time VM access
+- Private endpoints for PaaS services
+- Azure Firewall for centralized policy enforcement
+- Continuous monitoring with Sentinel
+
+### 2. Defense in Depth
+
+Multiple layers of security controls:
+
+Layer 1: Network Perimeter
+- DDoS Protection
+- Azure Firewall
+- Web Application Firewall (WAF)
+- VPN/ExpressRoute for hybrid connectivity
+
+Layer 2: Network Segmentation
+- Virtual Networks (VNets)
+- Subnets
+- Network Security Groups (NSGs)
+- Application Security Groups (ASGs)
+
+Layer 3: Access Control
+- Azure Bastion for VM access
+- Just-in-Time access
+- Private endpoints
+- Service endpoints
+
+Layer 4: Monitoring and Response
+- Network Watcher
+- NSG Flow Logs
+- Azure Monitor
+- Microsoft Sentinel
+- Traffic Analytics
+
+### 3. Segmentation and Isolation
+
+Principles:
+- Isolate workloads by security requirements
+- Separate production from non-production
+- Isolate high-value assets
+- Implement least privilege network access
+- Use microsegmentation for granular control
+
+Virtual Network Architecture
+-----------------------------
+
+### 1. VNet Design Best Practices
+
+**IP Address Planning:**
+
+Best Practices:
+- Plan IP address space carefully (avoid overlaps)
+- Use RFC 1918 private address space
+  * 10.0.0.0/8 (16,777,216 addresses)
+  * 172.16.0.0/12 (1,048,576 addresses)
+  * 192.168.0.0/16 (65,536 addresses)
+- Reserve address space for future growth
+- Use larger subnets (/24 or larger preferred)
+- Document IP allocation
+- Avoid small subnets (/29, /30) - limited addresses
+
+Address Reservation:
+- Azure reserves 5 IP addresses per subnet:
+  * .0 - Network address
+  * .1 - Default gateway
+  * .2, .3 - Azure DNS
+  * .255 - Network broadcast (not actually used but reserved)
+
+Example IP Plan:
+```
+Corporate Azure Environment
+Main VNet: 10.0.0.0/16 (65,536 addresses)
+
+Hub VNet: 10.0.0.0/20
+  - GatewaySubnet: 10.0.0.0/24 (for VPN/ExpressRoute)
+  - AzureFirewallSubnet: 10.0.1.0/24
+  - AzureBastionSubnet: 10.0.2.0/26
+  - Management: 10.0.3.0/24
+
+Production Spoke VNet: 10.1.0.0/16
+  - Web Tier: 10.1.1.0/24
+  - App Tier: 10.1.2.0/24
+  - Data Tier: 10.1.3.0/24
+  - AKS Cluster: 10.1.32.0/19
+
+Development Spoke VNet: 10.2.0.0/16
+  - Dev Web: 10.2.1.0/24
+  - Dev App: 10.2.2.0/24
+  - Dev Data: 10.2.3.0/24
+```
+
+**Subnet Design:**
+
+Best Practices:
+- Create subnets based on workload type and security requirements
+- Use dedicated subnets for specific purposes
+- Apply NSGs at subnet level (not NIC level)
+- Name subnets descriptively
+
+Common Subnet Types:
+- Gateway subnet (VPN, ExpressRoute) - minimum /27, recommend /26
+- Azure Firewall subnet - minimum /26, recommend /24
+- Azure Bastion subnet - minimum /26
+- Web tier subnet
+- Application tier subnet
+- Database tier subnet
+- Management/jump box subnet
+- AKS/container subnet (needs large address space)
+
+### 2. Hub-and-Spoke Topology
+
+**Architecture:**
+
+Hub VNet (Central):
+- Shared services (firewall, VPN gateway, DNS)
+- Network monitoring and logging
+- Management and jump boxes
+- Connectivity to on-premises
+
+Spoke VNets (Workloads):
+- Production workloads
+- Development/test environments
+- Partner/vendor access
+- Isolated security domains
+
+Connectivity:
+- VNet peering between hub and spokes
+- User-Defined Routes (UDRs) force traffic through hub firewall
+- No direct spoke-to-spoke communication (must traverse hub)
+
+Benefits:
+- Centralized security controls
+- Shared services (reduce costs)
+- Isolation between workloads
+- Simplified management
+- Scalable architecture
+
+Example Hub-and-Spoke:
+```
+Hub VNet (10.0.0.0/20)
+  - Azure Firewall (10.0.1.0/24)
+  - VPN Gateway (10.0.0.0/24)
+  - Management (10.0.3.0/24)
+  |
+  |-- Peering --> Production Spoke (10.1.0.0/16)
+  |                 - Web tier
+  |                 - App tier
+  |                 - Database tier
+  |
+  |-- Peering --> Dev/Test Spoke (10.2.0.0/16)
+  |                 - Development environment
+  |
+  |-- Peering --> Shared Services Spoke (10.3.0.0/16)
+                    - Active Directory
+                    - Monitoring
+```
+
+**Implementation:**
+
+Create Hub VNet:
+```bash
+# Create hub VNet
+az network vnet create \
+  --name Hub-VNet \
+  --resource-group Hub-RG \
+  --address-prefix 10.0.0.0/20 \
+  --subnet-name AzureFirewallSubnet \
+  --subnet-prefix 10.0.1.0/24
+
+# Create additional subnets
+az network vnet subnet create \
+  --name GatewaySubnet \
+  --vnet-name Hub-VNet \
+  --resource-group Hub-RG \
+  --address-prefix 10.0.0.0/24
+
+az network vnet subnet create \
+  --name AzureBastionSubnet \
+  --vnet-name Hub-VNet \
+  --resource-group Hub-RG \
+  --address-prefix 10.0.2.0/26
+```
+
+Create Spoke VNet and Peering:
+```bash
+# Create spoke VNet
+az network vnet create \
+  --name Prod-Spoke-VNet \
+  --resource-group Prod-RG \
+  --address-prefix 10.1.0.0/16
+
+# Create peering from hub to spoke
+az network vnet peering create \
+  --name Hub-to-Prod \
+  --vnet-name Hub-VNet \
+  --resource-group Hub-RG \
+  --remote-vnet /subscriptions/{sub-id}/resourceGroups/Prod-RG/providers/Microsoft.Network/virtualNetworks/Prod-Spoke-VNet \
+  --allow-forwarded-traffic \
+  --allow-gateway-transit
+
+# Create peering from spoke to hub
+az network vnet peering create \
+  --name Prod-to-Hub \
+  --vnet-name Prod-Spoke-VNet \
+  --resource-group Prod-RG \
+  --remote-vnet /subscriptions/{sub-id}/resourceGroups/Hub-RG/providers/Microsoft.Network/virtualNetworks/Hub-VNet \
+  --allow-forwarded-traffic \
+  --use-remote-gateways
+```
+
+### 3. VNet Peering Best Practices
+
+**Configuration Options:**
+
+Allow Forwarded Traffic:
+- Enable when using hub firewall or NVA
+- Allows traffic from one VNet to be forwarded to another
+- Required for hub-and-spoke with centralized firewall
+
+Allow Gateway Transit:
+- Enable on hub VNet
+- Allows spoke VNets to use hub's VPN/ExpressRoute gateway
+- Reduces cost (single gateway for all spokes)
+
+Use Remote Gateways:
+- Enable on spoke VNets
+- Uses the hub's gateway for on-premises connectivity
+- Dependent on Allow Gateway Transit
+
+Best Practices:
+- Use VNet peering instead of VPN gateways for VNet-to-VNet connectivity
+- Peering provides low latency, high bandwidth
+- No bandwidth limit on peering (unlike VPN gateway)
+- Peering traffic stays on Microsoft backbone
+- Name peering connections descriptively
+- Document peering relationships
+- Monitor peering status
+
+**Peering Restrictions:**
+
+- Cannot peer VNets with overlapping address spaces
+- Maximum 500 peerings per VNet (standard limit)
+- Peering is not transitive (A peers with B, B peers with C, but A cannot reach C)
+- Use hub-and-spoke or Azure Virtual WAN for transitive connectivity
+- Cross-region peering incurs bandwidth charges
+
+### 4. Azure Virtual WAN (Alternative to Hub-and-Spoke)
+
+**When to Use Virtual WAN:**
+
+Use Cases:
+- Large-scale branch connectivity (50+ sites)
+- Multiple Azure regions
+- SD-WAN integration required
+- Simplified management preferred
+- High bandwidth requirements
+
+Virtual WAN Components:
+- Virtual WAN resource (global)
+- Virtual hubs (regional)
+- VPN gateways (branch connectivity)
+- ExpressRoute gateways (private connectivity)
+- Firewall integration (Azure Firewall Manager)
+
+Benefits:
+- Transitive connectivity automatically
+- Integrated routing
+- Any-to-any connectivity
+- Global transit network
+- Simplified configuration
+
+Comparison:
+```
+Traditional Hub-and-Spoke:
+- Manual UDR configuration
+- More control
+- Lower cost for small deployments
+- Requires more networking expertise
+
+Virtual WAN:
+- Automated routing
+- Simplified management
+- Better for large scale
+- Higher cost
+- Less granular control
+```
+
+Network Security Groups (NSGs)
+-------------------------------
+
+### 1. NSG Architecture and Design
+
+**NSG Basics:**
+
+Purpose:
+- Layer 4 (TCP/UDP) stateful firewall
+- Filter inbound and outbound traffic
+- Apply to subnets or NICs (subnet preferred)
+- Default rules cannot be deleted
+
+Rule Components:
+- Priority (100-4096, lower = higher priority)
+- Name (descriptive)
+- Source (IP, Service Tag, ASG)
+- Source port (* typically)
+- Destination (IP, Service Tag, ASG)
+- Destination port (specific port or range)
+- Protocol (TCP, UDP, ICMP, Any)
+- Action (Allow or Deny)
+
+Rule Processing:
+1. Rules evaluated by priority (lowest first)
+2. First matching rule applied
+3. Processing stops after match
+4. Default rules evaluated last
+5. Stateful (return traffic automatically allowed)
+
+**NSG Best Practices:**
+
+Design Principles:
+- Apply NSGs at subnet level (not NIC) for easier management
+- Use descriptive names with numbering scheme
+- Leave gaps in priority numbers (100, 110, 120) for future insertions
+- Document purpose of each rule
+- Use service tags instead of IP addresses
+- Use Application Security Groups for workload-based rules
+- Review and clean up unused rules quarterly
+- Use Azure Policy to enforce NSG on all subnets
+
+Priority Numbering Scheme:
+```
+100-199: Management access (SSH, RDP, WinRM)
+200-299: Application traffic (HTTP, HTTPS)
+300-399: Database access
+400-499: Internal communication
+500-999: Reserved for future use
+1000+: Less critical rules
+```
+
+**Common NSG Configurations:**
+
+Web Tier NSG:
+```
+Priority  Name                Source          Dest      Port   Protocol  Action
+100       Allow-HTTPS-In      Internet        *         443    TCP       Allow
+110       Allow-HTTP-In       Internet        *         80     TCP       Allow
+120       Allow-AppTier       ASG-AppTier     *         *      Any       Allow
+200       Deny-Internet-Out   *               Internet  *      Any       Deny
+300       Allow-AzureCloud    *               AzureCloud *     Any       Allow
+65000     Default-Allow-VNet  VirtualNetwork  VNet      *      Any       Allow
+65500     Deny-All           *               *         *      Any       Deny
+```
+
+App Tier NSG:
+```
+Priority  Name                Source          Dest         Port   Protocol  Action
+100       Allow-Web           ASG-WebTier     *            8080   TCP       Allow
+110       Allow-DataTier      *               ASG-Data     1433   TCP       Allow
+200       Deny-Internet-Out   *               Internet     *      Any       Deny
+65000     Default-Allow-VNet  VirtualNetwork  VNet         *      Any       Allow
+65500     Deny-All           *               *            *      Any       Deny
+```
+
+Database Tier NSG:
+```
+Priority  Name                Source          Dest      Port   Protocol  Action
+100       Allow-App-SQL       ASG-AppTier     *         1433   TCP       Allow
+110       Allow-App-MySQL     ASG-AppTier     *         3306   TCP       Allow
+120       Allow-Mgmt          ASG-Mgmt        *         *      Any       Allow
+200       Deny-Internet       *               Internet  *      Any       Deny
+300       Deny-All-In         *               *         *      Any       Deny
+65500     Deny-All           *               *         *      Any       Deny
+```
+
+Management/Bastion NSG:
+```
+Priority  Name                Source          Dest      Port   Protocol  Action
+100       Allow-SSH           CorpNetwork     *         22     TCP       Allow
+110       Allow-RDP           CorpNetwork     *         3389   TCP       Allow
+200       Allow-VNet-Out      *               VNet      *      Any       Allow
+300       Deny-Internet-Out   *               Internet  *      Any       Deny
+65500     Deny-All           *               *         *      Any       Deny
+```
+
+### 2. Service Tags
+
+**What Are Service Tags:**
+
+Purpose:
+- Represent groups of IP address prefixes for Azure services
+- Automatically updated by Microsoft
+- Simplify NSG and firewall rules
+- No need to track changing IP addresses
+
+Common Service Tags:
+- VirtualNetwork: All VNet address spaces (includes peered VNets)
+- AzureLoadBalancer: Azure infrastructure load balancer
+- Internet: Public Internet
+- AzureCloud: All Azure public IP addresses
+- AzureCloud.Region: Azure IPs in specific region (e.g., AzureCloud.EastUS)
+- Storage: Azure Storage service
+- Storage.Region: Azure Storage in specific region
+- Sql: Azure SQL Database
+- AzureKeyVault: Azure Key Vault
+- AzureActiveDirectory: Azure AD
+- EventHub: Azure Event Hubs
+- ServiceBus: Azure Service Bus
+- AzureMonitor: Azure Monitor
+
+Regional Service Tags:
+- More specific targeting
+- Reduces rule scope
+- Better security posture
+- Example: Storage.EastUS instead of Storage
+
+**Service Tag Usage Examples:**
+
+Allow Storage Access in East US:
+```
+Priority: 200
+Name: Allow-Storage-EastUS
+Source: VirtualNetwork
+Destination: Storage.EastUS
+Port: 443
+Protocol: TCP
+Action: Allow
+```
+
+Allow Azure AD Authentication:
+```
+Priority: 210
+Name: Allow-AzureAD
+Source: VirtualNetwork
+Destination: AzureActiveDirectory
+Port: 443
+Protocol: TCP
+Action: Allow
+```
+
+Deny All Internet (with Azure service exceptions):
+```
+Priority: 300
+Name: Allow-AzureServices
+Source: VirtualNetwork
+Destination: AzureCloud
+Port: 443
+Protocol: TCP
+Action: Allow
+
+Priority: 310
+Name: Deny-Internet
+Source: VirtualNetwork
+Destination: Internet
+Port: *
+Protocol: Any
+Action: Deny
+```
+
+### 3. Application Security Groups (ASGs)
+
+**ASG Concepts:**
+
+Purpose:
+- Logical grouping of VMs/NICs
+- Group by application role (web, app, database)
+- Dynamic membership
+- Simplify NSG rules
+- More maintainable than IP-based rules
+
+Benefits:
+- Workload-centric security
+- Rules don't change when VMs added/removed
+- Easier to understand and maintain
+- Support for complex topologies
+- Better documentation of intent
+
+**ASG Design:**
+
+Common ASG Structure:
+```
+By Application Tier:
+- ASG-Web-Prod
+- ASG-App-Prod
+- ASG-Data-Prod
+- ASG-Mgmt
+
+By Application:
+- ASG-ERP-Web
+- ASG-ERP-App
+- ASG-ERP-Database
+- ASG-CRM-Web
+- ASG-CRM-App
+
+By Environment:
+- ASG-Prod-Web
+- ASG-Dev-Web
+- ASG-Test-Web
+```
+
+**ASG Implementation:**
+
+Create ASGs:
+```bash
+# Create ASG for web tier
+az network asg create \
+  --name ASG-Web \
+  --resource-group Prod-RG
+
+# Create ASG for app tier
+az network asg create \
+  --name ASG-App \
+  --resource-group Prod-RG
+
+# Create ASG for database tier
+az network asg create \
+  --name ASG-Database \
+  --resource-group Prod-RG
+```
+
+Assign VMs to ASGs:
+```bash
+# Get NIC ID
+NIC_ID=$(az vm show --name WebVM01 --resource-group Prod-RG --query 'networkProfile.networkInterfaces[0].id' -o tsv)
+
+# Assign NIC to ASG
+az network nic update \
+  --ids $NIC_ID \
+  --application-security-groups ASG-Web
+```
+
+Create NSG Rules Using ASGs:
+```bash
+# Allow web traffic from Internet to web tier
+az network nsg rule create \
+  --name Allow-HTTPS-to-Web \
+  --nsg-name Prod-NSG \
+  --resource-group Prod-RG \
+  --priority 100 \
+  --destination-asgs ASG-Web \
+  --destination-port-ranges 443 \
+  --protocol Tcp \
+  --access Allow
+
+# Allow app tier to access database tier
+az network nsg rule create \
+  --name Allow-App-to-DB \
+  --nsg-name Prod-NSG \
+  --resource-group Prod-RG \
+  --priority 200 \
+  --source-asgs ASG-App \
+  --destination-asgs ASG-Database \
+  --destination-port-ranges 1433 \
+  --protocol Tcp \
+  --access Allow
+```
+
+**ASG Best Practices:**
+
+- Create ASGs before deploying VMs
+- Use consistent naming convention
+- Document ASG membership criteria
+- Combine ASGs with service tags
+- Use ASGs instead of IP-based rules
+- Review ASG membership quarterly
+- Limit number of ASGs (avoid over-complexity)
+- Maximum 3000 ASGs per subscription
+
+### 4. NSG Flow Logs
+
+**Enable NSG Flow Logs:**
+
+Purpose:
+- Visibility into IP traffic through NSGs
+- Compliance and auditing
+- Network forensics
+- Anomaly detection
+- Traffic analysis
+
+Flow Log Information:
+- Source and destination IP
+- Source and destination port
+- Protocol
+- Allow or deny decision
+- Traffic direction (inbound/outbound)
+- Bytes and packets sent
+
+**Configuration:**
+
+Prerequisites:
+- Network Watcher enabled in region
+- Storage account for log storage
+- Log Analytics workspace (optional, for Traffic Analytics)
+
+Enable Flow Logs:
+```bash
+# Enable Network Watcher
+az network watcher configure \
+  --resource-group NetworkWatcherRG \
+  --locations eastus \
+  --enabled true
+
+# Enable NSG flow logs
+az network watcher flow-log create \
+  --name FlowLog-Prod-NSG \
+  --nsg /subscriptions/{sub-id}/resourceGroups/Prod-RG/providers/Microsoft.Network/networkSecurityGroups/Prod-NSG \
+  --storage-account /subscriptions/{sub-id}/resourceGroups/Logging-RG/providers/Microsoft.Storage/storageAccounts/flowlogssa \
+  --enabled true \
+  --retention 90 \
+  --format JSON \
+  --log-version 2
+```
+
+Flow Log Format (Version 2):
+```json
+{
+  "time": "2024-01-15T10:30:45.1234567Z",
+  "systemId": "...",
+  "macAddress": "...",
+  "category": "NetworkSecurityGroupFlowEvent",
+  "resourceId": "/SUBSCRIPTIONS/.../NETWORKSECURITYGROUPS/PROD-NSG",
+  "operationName": "NetworkSecurityGroupFlowEvents",
+  "properties": {
+    "flows": [{
+      "rule": "Allow-HTTPS",
+      "flows": [{
+        "mac": "...",
+        "flowTuples": [
+          "1673781045,192.168.1.4,10.1.1.5,54321,443,T,I,A,B,1024,512,8,4"
+        ]
+      }]
+    }]
+  }
+}
+```
+
+Tuple Format:
+```
+timestamp,srcIP,destIP,srcPort,destPort,protocol,direction,decision,flowState,packets(sent),bytes(sent),packets(received),bytes(received)
+```
+
+**Traffic Analytics:**
+
+Purpose:
+- Visual analytics of flow logs
+- Identify traffic patterns
+- Detect anomalies
+- Optimize network performance
+- Security threat detection
+
+Features:
+- Geographic traffic visualization
+- Top talkers (most active hosts)
+- Blocked traffic analysis
+- Open ports analysis
+- Malicious IP detection
+- Traffic distribution by application
+
+Enable Traffic Analytics:
+```bash
+az network watcher flow-log create \
+  --name FlowLog-with-Analytics \
+  --nsg /subscriptions/{sub-id}/resourceGroups/Prod-RG/providers/Microsoft.Network/networkSecurityGroups/Prod-NSG \
+  --storage-account flowlogssa \
+  --enabled true \
+  --traffic-analytics true \
+  --workspace /subscriptions/{sub-id}/resourceGroups/Logging-RG/providers/Microsoft.OperationalInsights/workspaces/LogAnalytics \
+  --interval 10
+```
+
+Azure Firewall
+--------------
+
+### 1. Azure Firewall Overview
+
+**Capabilities:**
+
+Features:
+- Fully stateful firewall as a service
+- Built-in high availability (99.95% SLA in zone deployment)
+- Unlimited cloud scalability
+- Application FQDN filtering
+- Network traffic filtering
+- Outbound SNAT and inbound DNAT
+- Threat intelligence-based filtering
+- Integration with Azure Monitor
+- Forced tunneling support
+- DNS proxy
+- IDPS (Intrusion Detection and Prevention System - Premium SKU)
+- TLS inspection (Premium SKU)
+
+SKU Comparison:
+```
+Basic SKU:
+- For small-medium deployments
+- Up to 250 Mbps throughput
+- Application rules (FQDN, HTTP/S, MSSQL)
+- Network rules (IP, port, protocol)
+- NAT rules
+- Threat intelligence
+
+Standard SKU:
+- For enterprise deployments
+- Up to 30 Gbps throughput
+- All Basic features
+- Service tags support
+- Multiple public IPs
+- Availability Zones
+- Custom DNS
+
+Premium SKU:
+- For high-security requirements
+- All Standard features
+- TLS inspection
+- IDPS (signature-based threat detection)
+- URL filtering
+- Web categories
+```
+
+**Deployment Architecture:**
+
+Hub-and-Spoke with Azure Firewall:
+```
+Internet
+   |
+   v
+Azure Firewall (Hub VNet)
+   | (UDR forces traffic through firewall)
+   |
+   |-- Spoke VNet 1 (Production)
+   |-- Spoke VNet 2 (Development)
+   |-- Spoke VNet 3 (DMZ)
+   |
+   v
+On-Premises (via VPN/ExpressRoute)
+```
+
+Subnet Requirements:
+- Dedicated subnet named "AzureFirewallSubnet"
+- Minimum /26 subnet (64 addresses)
+- Recommended /24 subnet for scalability
+- Must not have NSG applied to it
+- Can have route table for forced tunneling
+
+### 2. Azure Firewall Configuration
+
+**Create Azure Firewall:**
+
+```bash
+# Create firewall subnet
+az network vnet subnet create \
+  --name AzureFirewallSubnet \
+  --vnet-name Hub-VNet \
+  --resource-group Hub-RG \
+  --address-prefix 10.0.1.0/24
+
+# Create public IP for firewall
+az network public-ip create \
+  --name Firewall-PIP \
+  --resource-group Hub-RG \
+  --sku Standard \
+  --allocation-method Static
+
+# Create Azure Firewall
+az network firewall create \
+  --name Hub-Firewall \
+  --resource-group Hub-RG \
+  --location eastus \
+  --sku AZFW_VNet \
+  --tier Standard
+
+# Configure firewall IP
+az network firewall ip-config create \
+  --firewall-name Hub-Firewall \
+  --name FirewallConfig \
+  --resource-group Hub-RG \
+  --public-ip-address Firewall-PIP \
+  --vnet-name Hub-VNet
+```
+
+**Firewall Rules Structure:**
+
+Rule Collection Groups (priority 100-65000):
+  └─ Rule Collections
+      └─ Rules
+
+Rule Types:
+1. Application Rules: FQDN-based filtering
+2. Network Rules: IP/port/protocol filtering
+3. NAT Rules: DNAT for inbound traffic
+
+Processing Order:
+1. NAT rule collections
+2. Network rule collections
+3. Application rule collections
+4. Default action (allow or deny)
+
+### 3. Azure Firewall Rules
+
+**Application Rules:**
+
+Use Cases:
+- Allow specific websites (FQDN)
+- Control outbound Internet access
+- Allow updates from Microsoft, Ubuntu, etc.
+- Block malicious domains
+
+Example Application Rule Collection:
+```bash
+# Create application rule collection
+az network firewall application-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Allow-Microsoft-Services \
+  --priority 100 \
+  --action Allow \
+  --resource-group Hub-RG \
+  --name Allow-Windows-Update \
+  --source-addresses 10.1.0.0/16 \
+  --protocols https=443 http=80 \
+  --target-fqdns "*.microsoft.com" "*.windows.net" "*.windowsupdate.com"
+
+# Add rule to existing collection
+az network firewall application-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Allow-Microsoft-Services \
+  --resource-group Hub-RG \
+  --name Allow-Azure-Services \
+  --source-addresses 10.1.0.0/16 \
+  --protocols https=443 \
+  --target-fqdns "*.azure.com" "*.azure.net"
+```
+
+FQDN Tags (Simplified Configuration):
+- WindowsUpdate
+- WindowsDiagnostics
+- MicrosoftActiveProtectionService (MAPS)
+- AzureBackup
+- AzureKubernetesService
+- HDInsight
+
+Example using FQDN tags:
+```bash
+az network firewall application-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Allow-FQDN-Tags \
+  --priority 110 \
+  --action Allow \
+  --resource-group Hub-RG \
+  --name Allow-Windows-Update-Tag \
+  --source-addresses 10.1.0.0/16 \
+  --fqdn-tags WindowsUpdate AzureBackup
+```
+
+**Network Rules:**
+
+Use Cases:
+- Allow specific IP/port/protocol
+- Control east-west traffic
+- Allow DNS, NTP, monitoring
+- Non-HTTP(S) protocols
+
+Example Network Rule Collection:
+```bash
+# Create network rule collection
+az network firewall network-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Allow-Core-Services \
+  --priority 200 \
+  --action Allow \
+  --resource-group Hub-RG \
+  --name Allow-DNS \
+  --source-addresses 10.0.0.0/8 \
+  --dest-addr "168.63.129.16" \
+  --protocols UDP \
+  --destination-ports 53
+
+# Allow NTP
+az network firewall network-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Allow-Core-Services \
+  --resource-group Hub-RG \
+  --name Allow-NTP \
+  --source-addresses 10.0.0.0/8 \
+  --dest-addr "*" \
+  --protocols UDP \
+  --destination-ports 123
+
+# Allow HTTPS to Azure
+az network firewall network-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Allow-Core-Services \
+  --resource-group Hub-RG \
+  --name Allow-Azure-HTTPS \
+  --source-addresses 10.0.0.0/8 \
+  --service-tags AzureCloud \
+  --protocols TCP \
+  --destination-ports 443
+```
+
+**NAT Rules (DNAT):**
+
+Use Cases:
+- Publish internal services to Internet
+- Inbound port forwarding
+- Load balancer alternative for single instances
+
+Example DNAT Rules:
+```bash
+# Create NAT rule collection for inbound RDP
+az network firewall nat-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Inbound-NAT \
+  --priority 100 \
+  --resource-group Hub-RG \
+  --name RDP-to-JumpBox \
+  --source-addresses "*" \
+  --dest-addr "x.x.x.x" \  # Firewall public IP
+  --destination-ports 3389 \
+  --protocols TCP \
+  --translated-address 10.0.3.4 \  # Internal jump box IP
+  --translated-port 3389
+
+# Publish web server
+az network firewall nat-rule create \
+  --firewall-name Hub-Firewall \
+  --collection-name Inbound-NAT \
+  --resource-group Hub-RG \
+  --name HTTPS-to-WebServer \
+  --source-addresses "*" \
+  --dest-addr "x.x.x.x" \
+  --destination-ports 443 \
+  --protocols TCP \
+  --translated-address 10.1.1.10 \
+  --translated-port 443
+```
+
+### 4. Threat Intelligence
+
+**Enable Threat Intelligence:**
+
+Modes:
+- Off: Disabled
+- Alert only: Generate alerts but allow traffic
+- Alert and deny: Block traffic from/to malicious IPs
+
+Configuration:
+```bash
+# Enable threat intelligence in alert and deny mode
+az network firewall update \
+  --name Hub-Firewall \
+  --resource-group Hub-RG \
+  --threat-intel-mode Deny
+```
+
+Threat Intelligence Sources:
+- Microsoft Threat Intelligence feed
+- Known malicious IPs and domains
+- Command and control (C2) servers
+- Malware distribution sites
+- Updated continuously
+
+Best Practices:
+- Enable in "Alert and Deny" mode for production
+- Start with "Alert only" during testing
+- Monitor alerts in Azure Monitor
+- Review false positives
+- Whitelist legitimate IPs if needed
+
+### 5. Forced Tunneling and User-Defined Routes
+
+**Configure Forced Tunneling:**
+
+Scenario: Force all Internet-bound traffic through firewall
+
+Step 1: Create Route Table:
+```bash
+# Create route table
+az network route-table create \
+  --name RT-Spoke-Prod \
+  --resource-group Prod-RG
+
+# Create default route to firewall
+az network route-table route create \
+  --name Default-via-Firewall \
+  --route-table-name RT-Spoke-Prod \
+  --resource-group Prod-RG \
+  --address-prefix 0.0.0.0/0 \
+  --next-hop-type VirtualAppliance \
+  --next-hop-ip-address 10.0.1.4  # Firewall private IP
+
+# Associate route table with subnet
+az network vnet subnet update \
+  --name Web-Subnet \
+  --vnet-name Prod-Spoke-VNet \
+  --resource-group Prod-RG \
+  --route-table RT-Spoke-Prod
+```
+
+Step 2: Configure Firewall Rules (allow outbound traffic)
+
+Common UDR Patterns:
+```
+Internet traffic via firewall:
+0.0.0.0/0 -> Next hop: Firewall
+
+Spoke-to-spoke via firewall:
+10.2.0.0/16 -> Next hop: Firewall (from 10.1.0.0/16)
+10.1.0.0/16 -> Next hop: Firewall (from 10.2.0.0/16)
+
+On-premises via VPN gateway:
+192.168.0.0/16 -> Next hop: Virtual Network Gateway
+```
+
+**UDR Best Practices:**
+
+- Document route tables thoroughly
+- Use descriptive names
+- Apply at subnet level
+- Test connectivity after applying routes
+- Monitor for routing loops
+- Use route propagation for dynamic routes (BGP)
+- Create separate route tables for different security zones
+- Verify next hop IP addresses
+
+Private Endpoints and Service Endpoints
+----------------------------------------
+
+### 1. Private Endpoints
+
+**Concept:**
+
+Purpose:
+- Access PaaS services via private IP address
+- Traffic never leaves Microsoft backbone network
+- Eliminates public Internet exposure
+- Prevents data exfiltration
+
+Supported Services (100+):
+- Azure Storage (Blob, Files, Tables, Queues, Data Lake)
+- Azure SQL Database
+- Azure Cosmos DB
+- Azure Key Vault
+- Azure Web Apps
+- Azure Container Registry
+- Azure Event Hub
+- Azure Service Bus
+- Azure Cognitive Services
+- Many more...
+
+Architecture:
+```
+VNet (10.1.0.0/16)
+  |
+  └─ PE-Subnet (10.1.254.0/24)
+      |
+      └─ Private Endpoint (10.1.254.4)
+          |
+          └─ Azure Storage Account
+              - Blob: mystorageacct.blob.core.windows.net
+              - Private DNS: mystorageacct.privatelink.blob.core.windows.net
+              - Resolves to: 10.1.254.4
+```
+
+**Implementation:**
+
+Create Private Endpoint:
+```bash
+# Create subnet for private endpoints
+az network vnet subnet create \
+  --name PrivateEndpoint-Subnet \
+  --vnet-name Prod-VNet \
+  --resource-group Prod-RG \
+  --address-prefix 10.1.254.0/24 \
+  --disable-private-endpoint-network-policies true
+
+# Create private endpoint for storage account
+az network private-endpoint create \
+  --name PE-StorageAccount \
+  --resource-group Prod-RG \
+  --vnet-name Prod-VNet \
+  --subnet PrivateEndpoint-Subnet \
+  --private-connection-resource-id /subscriptions/{sub-id}/resourceGroups/Storage-RG/providers/Microsoft.Storage/storageAccounts/mystorageacct \
+  --group-id blob \
+  --connection-name StorageConnection
+
+# Create private DNS zone
+az network private-dns zone create \
+  --name privatelink.blob.core.windows.net \
+  --resource-group Prod-RG
+
+# Link DNS zone to VNet
+az network private-dns link vnet create \
+  --name StorageDNSLink \
+  --resource-group Prod-RG \
+  --zone-name privatelink.blob.core.windows.net \
+  --virtual-network Prod-VNet \
+  --registration-enabled false
+
+# Create DNS record for private endpoint
+az network private-endpoint dns-zone-group create \
+  --name StorageDNSZoneGroup \
+  --resource-group Prod-RG \
+  --endpoint-name PE-StorageAccount \
+  --private-dns-zone privatelink.blob.core.windows.net \
+  --zone-name blob
+```
+
+**Private Endpoint Best Practices:**
+
+- Use dedicated subnet for private endpoints
+- One private endpoint per PaaS service
+- Configure private DNS zones for name resolution
+- Disable public access on PaaS resource
+- Monitor private endpoint connections
+- Document private endpoint mappings
+- Use Azure Policy to enforce private endpoints
+- Test connectivity from VMs
+
+Private DNS Integration:
+- Automatic creation of DNS records
+- Correct name resolution from VNet
+- No manual DNS configuration needed
+- Works across peered VNets
+- Supports custom DNS servers
+
+Security Benefits:
+- No public IP exposure
+- Traffic stays on Microsoft backbone
+- NSG rules apply to private endpoint subnet
+- Prevents data exfiltration
+- Compliant with data residency requirements
+
+### 2. Service Endpoints
+
+**Concept:**
+
+Purpose:
+- Optimize routing to Azure services
+- Keep traffic on Microsoft backbone
+- Enable service-level firewall rules
+- Improve security posture
+
+Differences from Private Endpoints:
+```
+Service Endpoints:
+- Service keeps public IP
+- Optimized routing (not Internet)
+- Free
+- Subnet-level enablement
+- Less secure than private endpoints
+
+Private Endpoints:
+- Service gets private IP in your VNet
+- No public IP needed
+- Cost per endpoint (~$7/month)
+- Resource-level deployment
+- Maximum security
+```
+
+Supported Services:
+- Azure Storage
+- Azure SQL Database
+- Azure Cosmos DB
+- Azure Key Vault
+- Azure Service Bus
+- Azure Event Hub
+- Azure Data Lake
+- Azure App Service
+- Azure Cognitive Services
+
+**Implementation:**
+
+Enable Service Endpoint:
+```bash
+# Enable service endpoint on subnet
+az network vnet subnet update \
+  --name App-Subnet \
+  --vnet-name Prod-VNet \
+  --resource-group Prod-RG \
+  --service-endpoints Microsoft.Storage Microsoft.Sql
+
+# Configure firewall rule on storage account
+az storage account network-rule add \
+  --account-name mystorageacct \
+  --resource-group Storage-RG \
+  --vnet-name Prod-VNet \
+  --subnet App-Subnet
+
+# Remove default allow rule (optional, for maximum security)
+az storage account update \
+  --name mystorageacct \
+  --resource-group Storage-RG \
+  --default-action Deny
+```
+
+Service Endpoint Policies:
+- Further restrict which Azure services can be accessed
+- Prevent data exfiltration to unauthorized storage accounts
+- Apply at subnet level
+
+Example Service Endpoint Policy:
+```bash
+# Create service endpoint policy
+az network service-endpoint policy create \
+  --name AllowedStorageAccounts \
+  --resource-group Prod-RG
+
+# Add allowed storage account to policy
+az network service-endpoint policy-definition create \
+  --name Allow-Prod-Storage \
+  --policy-name AllowedStorageAccounts \
+  --resource-group Prod-RG \
+  --service Microsoft.Storage \
+  --service-resources /subscriptions/{sub-id}/resourceGroups/Storage-RG/providers/Microsoft.Storage/storageAccounts/mystorageacct
+
+# Apply policy to subnet
+az network vnet subnet update \
+  --name App-Subnet \
+  --vnet-name Prod-VNet \
+  --resource-group Prod-RG \
+  --service-endpoint-policy AllowedStorageAccounts
+```
+
+**When to Use Each:**
+
+Use Private Endpoints When:
+- Maximum security required
+- Compliance mandates private connectivity
+- Accessing from on-premises via VPN/ExpressRoute
+- Need to eliminate public exposure
+- Data exfiltration prevention is critical
+
+Use Service Endpoints When:
+- Cost-sensitive deployment
+- Don't need private IP
+- Simple subnet-level access control sufficient
+- Service doesn't support private endpoints yet
+
+Azure Bastion
+-------------
+
+### 1. Azure Bastion Overview
+
+**Purpose:**
+
+Benefits:
+- RDP/SSH without public IPs on VMs
+- No need for jump boxes or VPN
+- Integrated with Azure portal
+- Protected against port scanning and DDoS
+- Centralized access point
+- SSL/TLS encrypted (443)
+- Simplified management
+
+Architecture:
+```
+User (Browser) --> Azure Portal --> Azure Bastion (in VNet) --> VM (no public IP)
+                      HTTPS 443         Bastion Subnet            RDP 3389 / SSH 22
+```
+
+**Deployment:**
+
+Requirements:
+- Dedicated subnet named "AzureBastionSubnet"
+- Minimum /26 subnet (64 addresses)
+- Recommended /24 for scale
+- Standard SKU public IP (static)
+- NSG on Bastion subnet (specific rules required)
+
+Create Azure Bastion:
+```bash
+# Create Bastion subnet
+az network vnet subnet create \
+  --name AzureBastionSubnet \
+  --vnet-name Hub-VNet \
+  --resource-group Hub-RG \
+  --address-prefix 10.0.2.0/26
+
+# Create public IP for Bastion
+az network public-ip create \
+  --name Bastion-PIP \
+  --resource-group Hub-RG \
+  --sku Standard \
+  --allocation-method Static
+
+# Create Azure Bastion
+az network bastion create \
+  --name Hub-Bastion \
+  --resource-group Hub-RG \
+  --vnet-name Hub-VNet \
+  --public-ip-address Bastion-PIP \
+  --sku Standard
+```
+
+### 2. Azure Bastion SKUs
+
+**Basic SKU:**
+- RDP and SSH connectivity
+- Access via Azure portal
+- Single concurrent session per browser
+- Cost: ~$140/month
+
+**Standard SKU:**
+- All Basic features
+- Native client support (RDP/SSH clients)
+- IP-based connection
+- Multiple concurrent sessions
+- File upload/download (RDP)
+- Shareable link
+- Cost: ~$140/month + usage
+
+**Premium SKU (Preview):**
+- All Standard features
+- Private-only deployment (no public IP)
+- Enhanced security
+
+Recommendation: Use Standard SKU for production
+
+### 3. Azure Bastion NSG Requirements
+
+**AzureBastionSubnet NSG Rules:**
+
+Inbound Rules:
+```
+Priority  Name                    Source              Dest   Port   Protocol  Action
+100       Allow-HTTPS             Internet            *      443    TCP       Allow
+110       Allow-GatewayManager    GatewayManager      *      443    TCP       Allow
+120       Allow-AzureLoadBalancer AzureLoadBalancer   *      443    TCP       Allow
+130       Allow-BastionHostComm   VirtualNetwork      *      8080,5701 TCP   Allow
+```
+
+Outbound Rules:
+```
+Priority  Name                Source          Dest            Port   Protocol  Action
+100       Allow-SSH-RDP       *               VirtualNetwork  22,3389 TCP      Allow
+110       Allow-AzureCloud    *               AzureCloud      443    TCP       Allow
+120       Allow-BastionComm   VirtualNetwork  VirtualNetwork  8080,5701 TCP   Allow
+130       Allow-HTTP-Out      *               Internet        80     TCP       Allow
+```
+
+Create NSG for Bastion:
+```bash
+# Create NSG
+az network nsg create \
+  --name NSG-AzureBastion \
+  --resource-group Hub-RG
+
+# Inbound rules
+az network nsg rule create \
+  --nsg-name NSG-AzureBastion \
+  --resource-group Hub-RG \
+  --name Allow-HTTPS-Inbound \
+  --priority 100 \
+  --source-address-prefixes Internet \
+  --destination-port-ranges 443 \
+  --protocol Tcp \
+  --access Allow
+
+az network nsg rule create \
+  --nsg-name NSG-AzureBastion \
+  --resource-group Hub-RG \
+  --name Allow-GatewayManager \
+  --priority 110 \
+  --source-address-prefixes GatewayManager \
+  --destination-port-ranges 443 \
+  --protocol Tcp \
+  --access Allow
+
+# Outbound rules
+az network nsg rule create \
+  --nsg-name NSG-AzureBastion \
+  --resource-group Hub-RG \
+  --name Allow-SSH-RDP-Outbound \
+  --priority 100 \
+  --direction Outbound \
+  --destination-address-prefixes VirtualNetwork \
+  --destination-port-ranges 22 3389 \
+  --protocol Tcp \
+  --access Allow
+
+# Apply NSG to Bastion subnet
+az network vnet subnet update \
+  --name AzureBastionSubnet \
+  --vnet-name Hub-VNet \
+  --resource-group Hub-RG \
+  --network-security-group NSG-AzureBastion
+```
+
+### 4. Azure Bastion Best Practices
+
+Configuration:
+- Deploy in hub VNet for centralized access
+- Use Standard SKU for native client support
+- Configure NSG correctly (required)
+- Enable diagnostic logging
+- Monitor usage and connections
+- Integrate with Azure AD for authentication
+- Use Just-in-Time access with Bastion
+
+Security:
+- Remove public IPs from VMs
+- Delete jump boxes (replace with Bastion)
+- Remove RDP/SSH NSG rules from VM subnets
+- Use Bastion exclusively for VM access
+- Audit all Bastion connections
+- Implement Conditional Access policies
+
+Cost Optimization:
+- Single Bastion can serve entire VNet (including peered VNets)
+- Consider cost vs. VPN gateway for admin access
+- Monitor for unused Bastion instances
+
+DDoS Protection
+---------------
+
+### 1. Azure DDoS Protection
+
+**DDoS Protection Tiers:**
+
+Basic (Free):
+- Automatic protection for Azure infrastructure
+- Protection for Azure platform itself
+- No configuration needed
+- Limited visibility and control
+- No cost
+
+Standard (Paid):
+- Enhanced DDoS mitigation
+- Adaptive tuning based on traffic patterns
+- Always-on traffic monitoring
+- Attack analytics and metrics
+- Alerts and telemetry
+- DDoS Rapid Response support
+- Cost protection (refund for scale-out costs during attack)
+- Cost: ~$2,944/month (protects all public IPs in subscription)
+
+**When to Enable DDoS Standard:**
+
+Enable If:
+- Production workloads with public IPs
+- E-commerce or customer-facing applications
+- Financial or healthcare services
+- SLA requirements
+- Brand reputation concerns
+- Regulatory compliance
+
+Skip If:
+- No public-facing services
+- Everything behind WAF/Front Door (has built-in DDoS)
+- Development/test only
+- Cost-sensitive non-critical workloads
+
+### 2. DDoS Configuration
+
+**Enable DDoS Protection:**
+
+```bash
+# Create DDoS protection plan
+az network ddos-protection create \
+  --name DDoS-Protection-Plan \
+  --resource-group Security-RG
+
+# Enable DDoS on VNet
+az network vnet update \
+  --name Prod-VNet \
+  --resource-group Prod-RG \
+  --ddos-protection-plan /subscriptions/{sub-id}/resourceGroups/Security-RG/providers/Microsoft.Network/ddosProtectionPlans/DDoS-Protection-Plan
+```
+
+**Configure DDoS Alerts:**
+
+```bash
+# Create action group for notifications
+az monitor action-group create \
+  --name DDoS-Alert-AG \
+  --resource-group Security-RG \
+  --short-name DDoSAlert \
+  --email-receiver name=SecurityTeam email=security@company.com
+
+# Create alert rule for DDoS attack
+az monitor metrics alert create \
+  --name DDoS-Attack-Alert \
+  --resource-group Prod-RG \
+  --scopes /subscriptions/{sub-id}/resourceGroups/Prod-RG/providers/Microsoft.Network/publicIPAddresses/Prod-PIP \
+  --condition "avg Under DDoS attack or not == 1" \
+  --description "Alert when under DDoS attack" \
+  --action DDoS-Alert-AG
+```
+
+**DDoS Metrics to Monitor:**
+
+- Under DDoS attack or not (0 or 1)
+- Inbound packets dropped DDoS
+- Inbound packets forwarded DDoS
+- Inbound TCP packets to trigger DDoS mitigation
+- Inbound UDP packets to trigger DDoS mitigation
+- Inbound SYN packets to trigger DDoS mitigation
+
+### 3. DDoS Best Practices
+
+Design:
+- Enable DDoS Standard on production VNets
+- Distribute applications across regions
+- Use Azure Front Door or Traffic Manager
+- Implement auto-scaling
+- Design for redundancy
+- Cache static content (CDN)
+
+Monitoring:
+- Configure DDoS alerts
+- Review attack analytics
+- Integrate with Sentinel for correlation
+- Document incident response procedures
+- Test response procedures
+
+Response:
+- Engage DDoS Rapid Response team during attack
+- Review attack metrics post-incident
+- Adjust infrastructure if needed
+- Document lessons learned
+- Update runbooks
+
+Web Application Firewall (WAF)
+-------------------------------
+
+### 1. WAF Overview
+
+**Purpose:**
+
+Protection Against:
+- SQL injection
+- Cross-site scripting (XSS)
+- Command injection
+- HTTP protocol violations
+- Bots and crawlers
+- Session fixation
+- OWASP Top 10 vulnerabilities
+
+WAF Platforms in Azure:
+- Application Gateway WAF
+- Azure Front Door WAF
+- Azure CDN (Microsoft) WAF
+
+**WAF Components:**
+
+Policy:
+- Mode (Detection vs. Prevention)
+- Rule sets (OWASP core rules, bot rules)
+- Custom rules
+- Exclusions
+
+Managed Rule Sets:
+- OWASP Core Rule Set 3.2, 3.1, 3.0
+- Microsoft Bot Manager Rule Set
+- Microsoft Default Rule Set (DRS)
+
+Custom Rules:
+- Match conditions (IP, Geo, string matching)
+- Rate limiting
+- Allowlist/blocklist
+
+### 2. Application Gateway WAF
+
+**Deployment:**
+
+Create Application Gateway with WAF:
+```bash
+# Create WAF v2 SKU Application Gateway
+az network application-gateway create \
+  --name AppGW-WAF \
+  --resource-group Prod-RG \
+  --location eastus \
+  --vnet-name Prod-VNet \
+  --subnet AppGW-Subnet \
+  --sku WAF_v2 \
+  --capacity 2 \
+  --http-settings-cookie-based-affinity Disabled \
+  --frontend-port 443 \
+  --http-settings-port 80 \
+  --http-settings-protocol Http \
+  --public-ip-address AppGW-PIP \
+  --priority 100
+```
+
+Configure WAF Policy:
+```bash
+# Create WAF policy
+az network application-gateway waf-policy create \
+  --name AppGW-WAF-Policy \
+  --resource-group Prod-RG \
+  --type OWASP \
+  --version 3.2
+
+# Set policy mode
+az network application-gateway waf-policy policy-setting update \
+  --policy-name AppGW-WAF-Policy \
+  --resource-group Prod-RG \
+  --mode Prevention \
+  --state Enabled \
+  --max-request-body-size 128 \
+  --file-upload-limit 100
+
+# Associate policy with Application Gateway
+az network application-gateway waf-policy create \
+  --name AppGW-WAF-Policy \
+  --resource-group Prod-RG
+```
+
+**Custom WAF Rules:**
+
+Geo-blocking Example:
+```bash
+# Block traffic from specific countries
+az network application-gateway waf-policy custom-rule create \
+  --policy-name AppGW-WAF-Policy \
+  --resource-group Prod-RG \
+  --name Block-Countries \
+  --priority 10 \
+  --rule-type MatchRule \
+  --action Block \
+  --match-condition \
+    MatchVariable=RemoteAddr \
+    Operator=GeoMatch \
+    MatchValue='CN,RU,KP'
+```
+
+Rate Limiting Example:
+```bash
+# Rate limit to 100 requests per minute per IP
+az network application-gateway waf-policy custom-rule create \
+  --policy-name AppGW-WAF-Policy \
+  --resource-group Prod-RG \
+  --name Rate-Limit \
+  --priority 20 \
+  --rule-type RateLimitRule \
+  --action Block \
+  --rate-limit-threshold 100 \
+  --rate-limit-duration OneMin \
+  --match-condition \
+    MatchVariable=RemoteAddr \
+    Operator=IPMatch \
+    MatchValue='*'
+```
+
+IP Allowlist Example:
+```bash
+# Allow only specific IP ranges
+az network application-gateway waf-policy custom-rule create \
+  --policy-name AppGW-WAF-Policy \
+  --resource-group Prod-RG \
+  --name Allow-Corporate-IPs \
+  --priority 5 \
+  --rule-type MatchRule \
+  --action Allow \
+  --match-condition \
+    MatchVariable=RemoteAddr \
+    Operator=IPMatch \
+    MatchValue='203.0.113.0/24,198.51.100.0/24'
+```
+
+### 3. Azure Front Door WAF
+
+**When to Use Front Door:**
+
+Use Cases:
+- Global applications
+- Multi-region backends
+- Layer 7 load balancing
+- SSL offload at edge
+- Caching and CDN
+- URL-based routing
+
+Create Front Door with WAF:
+```bash
+# Create Front Door WAF policy
+az network front-door waf-policy create \
+  --name FD-WAF-Policy \
+  --resource-group Prod-RG \
+  --mode Prevention \
+  --enabled true
+
+# Add managed rule set
+az network front-door waf-policy managed-rules add \
+  --policy-name FD-WAF-Policy \
+  --resource-group Prod-RG \
+  --type Microsoft_DefaultRuleSet \
+  --version 2.1
+
+# Add bot protection
+az network front-door waf-policy managed-rules add \
+  --policy-name FD-WAF-Policy \
+  --resource-group Prod-RG \
+  --type Microsoft_BotManagerRuleSet \
+  --version 1.0
+```
+
+Bot Protection:
+- Good bots (search engines, monitoring)
+- Bad bots (scrapers, scanners)
+- Unknown bots
+- Categorized by Bot Manager rules
+
+### 4. WAF Best Practices
+
+Configuration:
+- Start in Detection mode, then move to Prevention
+- Review logs during Detection mode
+- Configure exclusions for false positives
+- Use latest OWASP rule set version
+- Enable bot protection
+- Implement rate limiting
+- Use custom rules for business logic
+
+Monitoring:
+- Enable diagnostic logging
+- Send logs to Log Analytics
+- Create alerts for blocked requests
+- Review WAF logs regularly
+- Tune false positives
+- Monitor for new attack patterns
+
+Tuning:
+- Identify legitimate traffic blocked
+- Create exclusions for specific rules
+- Exclude specific request attributes (headers, cookies)
+- Document all exclusions and reasons
+- Review exclusions quarterly
+
+Example Exclusion:
+```bash
+# Exclude specific request header from rule evaluation
+az network application-gateway waf-policy managed-rule exclusion add \
+  --policy-name AppGW-WAF-Policy \
+  --resource-group Prod-RG \
+  --match-variable RequestHeaderNames \
+  --selector-match-operator Equals \
+  --selector User-Agent \
+  --rule-set-type OWASP \
+  --rule-set-version 3.2
+```
+
+Hybrid and VPN Connectivity
+----------------------------
+
+### 1. Site-to-Site VPN
+
+**Use Cases:**
+- Connect on-premises to Azure
+- Backup connectivity for ExpressRoute
+- Development/test environments
+- Cost-sensitive deployments
+
+Create VPN Gateway:
+```bash
+# Create gateway subnet
+az network vnet subnet create \
+  --name GatewaySubnet \
+  --vnet-name Hub-VNet \
+  --resource-group Hub-RG \
+  --address-prefix 10.0.0.0/24
+
+# Create public IP for VPN gateway
+az network public-ip create \
+  --name VPN-Gateway-PIP \
+  --resource-group Hub-RG \
+  --allocation-method Static \
+  --sku Standard
+
+# Create VPN gateway (takes 30-45 minutes)
+az network vnet-gateway create \
+  --name Hub-VPN-Gateway \
+  --resource-group Hub-RG \
+  --vnet Hub-VNet \
+  --public-ip-address VPN-Gateway-PIP \
+  --gateway-type Vpn \
+  --vpn-type RouteBased \
+  --sku VpnGw2 \
+  --vpn-gateway-generation Generation2
+```
+
+VPN Gateway SKUs:
+```
+Basic: Legacy, 100 Mbps, 10 tunnels (not recommended)
+VpnGw1: 650 Mbps, 30 tunnels, $140/month
+VpnGw2: 1 Gbps, 30 tunnels, $360/month
+VpnGw3: 1.25 Gbps, 30 tunnels, $750/month
+VpnGw4: 5 Gbps, 100 tunnels, $1,490/month
+VpnGw5: 10 Gbps, 100 tunnels, $2,270/month
+```
+
+**VPN Security Best Practices:**
+
+Cryptography:
+- Use IKEv2 (not IKEv1)
+- Strong encryption: AES256
+- Strong integrity: SHA256 or better
+- DH Group 14 or higher
+- PFS (Perfect Forward Secrecy) enabled
+
+Configuration:
+```bash
+# Create local network gateway (on-premises)
+az network local-gateway create \
+  --name OnPrem-LNG \
+  --resource-group Hub-RG \
+  --gateway-ip-address 203.0.113.1 \
+  --local-address-prefixes 192.168.0.0/16 172.16.0.0/12
+
+# Create VPN connection
+az network vpn-connection create \
+  --name Hub-to-OnPrem \
+  --resource-group Hub-RG \
+  --vnet-gateway1 Hub-VPN-Gateway \
+  --local-gateway2 OnPrem-LNG \
+  --shared-key 'ComplexSharedSecretKey123!' \
+  --connection-protocol IKEv2
+
+# Configure IPsec policy
+az network vpn-connection ipsec-policy add \
+  --connection-name Hub-to-OnPrem \
+  --resource-group Hub-RG \
+  --ike-encryption AES256 \
+  --ike-integrity SHA256 \
+  --dh-group DHGroup24 \
+  --ipsec-encryption AES256 \
+  --ipsec-integrity SHA256 \
+  --pfs-group PFS24 \
+  --sa-lifetime 27000 \
+  --sa-data-size 102400000
+```
+
+Monitoring:
+- Monitor VPN gateway metrics (bandwidth, packet count)
+- Alert on tunnel disconnection
+- Review connection logs
+- Test failover regularly
+- Document on-premises VPN device configuration
+
+### 2. Point-to-Site VPN
+
+**Use Cases:**
+- Remote worker access
+- Administrator access
+- Temporary access
+- Alternative to Azure Bastion
+
+Authentication Methods:
+- Azure certificates
+- Azure AD authentication
+- RADIUS authentication
+
+Configure P2S VPN:
+```bash
+# Generate root certificate (self-signed for testing)
+# In production, use CA-signed certificates
+
+# Configure P2S on VPN gateway
+az network vnet-gateway update \
+  --name Hub-VPN-Gateway \
+  --resource-group Hub-RG \
+  --client-protocol IkeV2 SSTP \
+  --address-prefixes 172.16.0.0/24
+
+# Upload root certificate
+az network vnet-gateway root-cert create \
+  --gateway-name Hub-VPN-Gateway \
+  --resource-group Hub-RG \
+  --name RootCert \
+  --public-cert-data <base64-encoded-cert-data>
+```
+
+Azure AD Authentication (Recommended):
+- Modern authentication
+- MFA support
+- Conditional Access
+- Better user experience
+- Centralized management
+
+Best Practices:
+- Use Azure AD authentication
+- Require MFA for P2S VPN
+- Implement Conditional Access
+- Monitor P2S connections
+- Limit P2S address pool size
+- Regular certificate rotation (if using certs)
+
+### 3. ExpressRoute
+
+**Purpose:**
+- Private, dedicated connection to Azure
+- Bypass public Internet
+- Predictable performance
+- Higher reliability
+- Required for some compliance scenarios
+
+Connection Models:
+- CloudExchange Co-location
+- Point-to-Point Ethernet
+- Any-to-Any (IPVPN)
+- ExpressRoute Direct (100 Gbps)
+
+Security Considerations:
+- Traffic doesn't traverse Internet
+- Encrypt sensitive data anyway (defense in depth)
+- Use MACsec encryption (ExpressRoute Direct)
+- Implement firewall at edge
+- Monitor for anomalies
+- Use NSGs on Azure side
+
+Best Practices:
+- Implement redundant ExpressRoute circuits
+- Use VPN as backup for ExpressRoute
+- Monitor circuit health and bandwidth
+- Implement QoS for critical traffic
+- Document circuit configuration
+- Test failover procedures
+
+Azure Network Security Monitoring
+----------------------------------
+
+### 1. Network Watcher
+
+**Capabilities:**
+
+Monitoring Tools:
+- Connection Monitor: End-to-end connectivity monitoring
+- Connection Troubleshoot: Diagnose connectivity issues
+- IP Flow Verify: Check if traffic allowed/denied by NSG
+- Next Hop: Determine routing path
+- NSG Diagnostics: Test NSG rules
+- Packet Capture: Capture traffic for analysis
+- VPN Troubleshoot: Diagnose VPN issues
+
+Logging:
+- NSG Flow Logs
+- Traffic Analytics
+- Connection Monitor logs
+
+**Enable Network Watcher:**
+
+```bash
+# Enable Network Watcher (automatic in most regions)
+az network watcher configure \
+  --resource-group NetworkWatcherRG \
+  --locations eastus westus \
+  --enabled true
+```
+
+**Connection Monitor:**
+
+Purpose:
+- Proactive monitoring of connectivity
+- Test reachability to endpoints
+- Measure latency and packet loss
+- Alert on connectivity issues
+
+Create Connection Monitor:
+```bash
+# Create connection monitor
+az network watcher connection-monitor create \
+  --name WebApp-Monitoring \
+  --resource-group Prod-RG \
+  --location eastus \
+  --source-resource /subscriptions/{sub-id}/resourceGroups/Prod-RG/providers/Microsoft.Compute/virtualMachines/WebVM01 \
+  --dest-address www.microsoft.com \
+  --dest-port 443 \
+  --protocol TCP \
+  --monitoring-interval 60
+```
+
+**IP Flow Verify:**
+
+Test if traffic allowed:
+```bash
+az network watcher test-ip-flow \
+  --resource-group Prod-RG \
+  --vm WebVM01 \
+  --direction Outbound \
+  --protocol TCP \
+  --local 10.1.1.4:54321 \
+  --remote 8.8.8.8:443
+```
+
+**Packet Capture:**
+
+Capture traffic for analysis:
+```bash
+# Start packet capture
+az network watcher packet-capture create \
+  --name WebVM-Capture \
+  --resource-group Prod-RG \
+  --vm WebVM01 \
+  --storage-account packetcapturessa \
+  --filters "[{\"protocol\":\"TCP\",\"remoteIPAddress\":\"8.8.8.8\"}]" \
+  --time-limit 60
+```
+
+### 2. Azure Monitor
+
+**Network Monitoring:**
+
+Metrics to Monitor:
+- VNet peering status
+- VPN gateway bandwidth
+- ExpressRoute circuit bandwidth
+- Azure Firewall throughput
+- Application Gateway backend health
+- NSG flow log events
+- Private endpoint connections
+
+Create Alerts:
+```bash
+# Alert on VPN gateway disconnection
+az monitor metrics alert create \
+  --name VPN-Disconnection \
+  --resource-group Hub-RG \
+  --scopes /subscriptions/{sub-id}/resourceGroups/Hub-RG/providers/Microsoft.Network/virtualNetworkGateways/Hub-VPN-Gateway \
+  --condition "avg Tunnel Ingress Bytes == 0" \
+  --window-size 5m \
+  --evaluation-frequency 1m \
+  --description "Alert when VPN tunnel has no traffic"
+```
+
+**Log Analytics Queries:**
+
+Top talkers (from NSG flow logs):
+```kusto
+AzureNetworkAnalytics_CL
+| where SubType_s == "FlowLog"
+| summarize TotalBytes = sum(BytesSentDest_d) by SrcIP_s, DestIP_s
+| top 10 by TotalBytes desc
+```
+
+Denied flows:
+```kusto
+AzureNetworkAnalytics_CL
+| where SubType_s == "FlowLog" and FlowStatus_s == "D"
+| project TimeGenerated, SrcIP_s, DestIP_s, DestPort_d, FlowStatus_s, NSGName_s
+| order by TimeGenerated desc
+```
+
+Azure Firewall blocked traffic:
+```kusto
+AzureDiagnostics
+| where Category == "AzureFirewallApplicationRule" or Category == "AzureFirewallNetworkRule"
+| where Action == "Deny"
+| project TimeGenerated, SourceIp, DestinationIp, DestinationPort, Action, msg_s
+```
+
+### 3. Microsoft Sentinel for Network Security
+
+**Network Security Use Cases:**
+
+- Correlate network events with security incidents
+- Detect lateral movement
+- Identify data exfiltration
+- Anomaly detection (unusual traffic patterns)
+- Automated response to network threats
+
+Sample Analytics Rules:
+
+Excessive denied connections:
+```kusto
+AzureNetworkAnalytics_CL
+| where SubType_s == "FlowLog" and FlowStatus_s == "D"
+| summarize DeniedConnections = count() by SrcIP_s, bin(TimeGenerated, 1h)
+| where DeniedConnections > 100
+```
+
+New external connection:
+```kusto
+AzureDiagnostics
+| where Category == "AzureFirewallApplicationRule"
+| where DestinationIp !startswith "10." and DestinationIp !startswith "172.16." and DestinationIp !startswith "192.168."
+| summarize FirstSeen = min(TimeGenerated) by DestinationIp, DestinationPort
+| where FirstSeen > ago(1d)
+```
+
+Azure Policy for Network Security
+----------------------------------
+
+### Common Network Security Policies
+
+**Enforce Security Controls:**
+
+Built-in Policies:
+- Network interfaces should not have public IPs
+- Subnets should be associated with an NSG
+- Virtual networks should use specified virtual network gateway
+- Storage accounts should use private link
+- Azure SQL servers should use private endpoints
+- Network Watcher should be enabled
+
+Custom Policy Examples:
+
+Require NSG on all subnets:
+```json
+{
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {
+          "field": "type",
+          "equals": "Microsoft.Network/virtualNetworks/subnets"
+        },
+        {
+          "field": "name",
+          "notIn": ["GatewaySubnet", "AzureFirewallSubnet", "AzureBastionSubnet"]
+        },
+        {
+          "field": "Microsoft.Network/virtualNetworks/subnets/networkSecurityGroup.id",
+          "exists": "false"
+        }
+      ]
+    },
+    "then": {
+      "effect": "deny"
+    }
+  }
+}
+```
+
+Block public IP creation:
+```json
+{
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {
+          "field": "type",
+          "equals": "Microsoft.Network/publicIPAddresses"
+        },
+        {
+          "field": "tags['AllowPublicIP']",
+          "notEquals": "true"
+        }
+      ]
+    },
+    "then": {
+      "effect": "deny"
+    }
+  }
+}
+```
+
+Require private endpoints for storage:
+```json
+{
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {
+          "field": "type",
+          "equals": "Microsoft.Storage/storageAccounts"
+        },
+        {
+          "field": "Microsoft.Storage/storageAccounts/networkAcls.defaultAction",
+          "notEquals": "Deny"
+        }
+      ]
+    },
+    "then": {
+      "effect": "audit"
+    }
+  }
+}
+```
+
+Network Security Checklist
+---------------------------
+
+### Planning and Design
+- [ ] IP address space planned (no overlaps)
+- [ ] Hub-and-spoke or Virtual WAN architecture
+- [ ] Network segmentation strategy defined
+- [ ] Security zones identified
+- [ ] Hybrid connectivity planned (VPN/ExpressRoute)
+- [ ] Disaster recovery considered
+- [ ] Documentation created
+
+### Network Segmentation
+- [ ] VNets created per workload/environment
+- [ ] Subnets created by tier (web, app, data)
+- [ ] NSGs applied to all subnets (except gateway subnets)
+- [ ] ASGs created for workload grouping
+- [ ] NSG rules follow least privilege
+- [ ] Service tags used instead of IPs
+- [ ] NSG flow logs enabled
+
+### Perimeter Security
+- [ ] Azure Firewall deployed (or NVA)
+- [ ] UDRs configured to force traffic through firewall
+- [ ] Firewall rules documented
+- [ ] Threat intelligence enabled (Alert and Deny)
+- [ ] DDoS Protection Standard enabled (production)
+- [ ] WAF deployed for web applications
+- [ ] WAF in Prevention mode (after tuning)
+
+### Access Control
+- [ ] Azure Bastion deployed
+- [ ] Public IPs removed from VMs
+- [ ] Jump boxes decommissioned
+- [ ] JIT VM access enabled
+- [ ] Private endpoints for PaaS services
+- [ ] Public access disabled on PaaS resources
+- [ ] Service endpoints configured (if not using private endpoints)
+
+### Hybrid Connectivity
+- [ ] VPN gateway deployed (with redundancy)
+- [ ] ExpressRoute configured (if applicable)
+- [ ] Strong encryption configured (IKEv2, AES256)
+- [ ] On-premises firewall configured
+- [ ] Routing configured correctly
+- [ ] BGP configured (if using ExpressRoute)
+- [ ] Connectivity tested and validated
+
+### Monitoring and Logging
+- [ ] Network Watcher enabled
+- [ ] NSG flow logs enabled (all NSGs)
+- [ ] Traffic Analytics enabled
+- [ ] Diagnostic settings configured (all network resources)
+- [ ] Log Analytics workspace created
+- [ ] Logs retained per compliance requirements (90+ days)
+- [ ] Connection Monitor configured
+- [ ] Alerts configured (VPN down, high traffic, etc.)
+
+### Security Operations
+- [ ] Microsoft Sentinel deployed
+- [ ] Network security analytics rules created
+- [ ] Playbooks for automated response
+- [ ] Security operations procedures documented
+- [ ] Incident response plan includes network scenarios
+- [ ] Regular security reviews scheduled
+- [ ] Vulnerability assessments conducted
+
+### Governance
+- [ ] Azure Policy implemented
+- [ ] Network security policies enforced
+- [ ] Compliance validated
+- [ ] Resource tagging enforced
+- [ ] Resource locks on critical resources
+- [ ] RBAC configured (least privilege)
+- [ ] Documentation maintained
+
+Documentation References
+------------------------
+
+[1] Microsoft Azure. (2024). Azure Network Security Documentation.
+    https://learn.microsoft.com/en-us/azure/security/fundamentals/network-overview
+    Official network security documentation.
+
+[2] Microsoft Azure. (2024). Azure Virtual Network Documentation.
+    https://learn.microsoft.com/en-us/azure/virtual-network/
+    VNet architecture and configuration.
+
+[3] Microsoft Azure. (2024). Azure Firewall Documentation.
+    https://learn.microsoft.com/en-us/azure/firewall/
+    Azure Firewall deployment and configuration.
+
+[4] Microsoft Azure. (2024). Network Security Groups Documentation.
+    https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview
+    NSG concepts and best practices.
+
+[5] Microsoft Azure. (2024). Azure Private Link Documentation.
+    https://learn.microsoft.com/en-us/azure/private-link/
+    Private endpoints and service endpoints.
+
+[6] Microsoft Azure. (2024). Azure Bastion Documentation.
+    https://learn.microsoft.com/en-us/azure/bastion/
+    Secure VM access configuration.
+
+[7] Microsoft Azure. (2024). Azure DDoS Protection Documentation.
+    https://learn.microsoft.com/en-us/azure/ddos-protection/
+    DDoS protection and mitigation.
+
+[8] Microsoft Azure. (2024). Azure VPN Gateway Documentation.
+    https://learn.microsoft.com/en-us/azure/vpn-gateway/
+    Site-to-site and point-to-site VPN.
+
+[9] Microsoft Azure. (2024). Azure ExpressRoute Documentation.
+    https://learn.microsoft.com/en-us/azure/expressroute/
+    Private connectivity to Azure.
+
+[10] Microsoft Azure. (2024). Azure Network Watcher Documentation.
+     https://learn.microsoft.com/en-us/azure/network-watcher/
+     Network monitoring and diagnostics.
+
+[11] Microsoft Azure. (2024). Hub-Spoke Network Topology in Azure.
+     https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/hybrid-networking/hub-spoke
+     Reference architecture for hub-spoke.
+
+[12] Microsoft Azure. (2024). Azure Well-Architected Framework - Network Security.
+     https://learn.microsoft.com/en-us/azure/architecture/framework/security/design-network
+     Architectural guidance for network security.
+
+[13] Microsoft Azure. (2024). Azure Security Benchmark - Network Security.
+     https://learn.microsoft.com/en-us/security/benchmark/azure/security-controls-v3-network-security
+     Network security controls and recommendations.
+
+[14] CIS (Center for Internet Security). (2024). CIS Microsoft Azure Foundations Benchmark.
+     https://www.cisecurity.org/benchmark/azure
+     Independent security benchmark including networking.
+
+[15] Microsoft Azure. (2024). Azure Virtual WAN Documentation.
+     https://learn.microsoft.com/en-us/azure/virtual-wan/
+     Global transit network architecture.
+
+Summary
+-------
+
+Azure network security requires a comprehensive approach combining multiple layers of defense:
+
+**Key Principles:**
+1. **Zero Trust Architecture**: Assume breach, verify explicitly
+2. **Defense in Depth**: Multiple layers of security controls
+3. **Segmentation**: Isolate workloads and security zones
+4. **Least Privilege**: Minimum necessary network access
+5. **Continuous Monitoring**: Visibility and threat detection
+
+**Essential Components:**
+- Hub-spoke topology for centralized control
+- NSGs and ASGs for traffic filtering
+- Azure Firewall for perimeter security
+- Private endpoints for PaaS services
+- Azure Bastion for secure VM access
+- DDoS Protection for availability
+- WAF for web application security
+- Comprehensive monitoring and logging
+
+**Security Maturity Levels:**
+1. **Basic**: NSGs, Azure Firewall Basic, public endpoints
+2. **Intermediate**: Hub-spoke, Azure Firewall Standard, service endpoints, monitoring
+3. **Advanced**: Private endpoints, Azure Firewall Premium with IDPS, Traffic Analytics, Sentinel
+4. **Optimized**: Zero Trust implementation, microsegmentation, automated response
+
+Effective Azure network security is not a one-time configuration but an ongoing process of assessment, implementation, monitoring, and continuous improvement. Organizations should regularly review their network security posture, adapt to new threats, and leverage Azure's evolving security capabilities to maintain a strong defense against cyberattacks.

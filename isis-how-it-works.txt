@@ -1,0 +1,1551 @@
+================================================================================
+                    HOW IS-IS (INTERMEDIATE SYSTEM TO
+                         INTERMEDIATE SYSTEM) WORKS
+================================================================================
+
+IS-IS is a link-state routing protocol designed for large-scale networks.
+Originally developed for OSI networks, it was adapted for IP routing and is
+widely used by service providers and large enterprises. IS-IS is known for its
+scalability, fast convergence, and flexibility in supporting multiple protocols.
+
+================================================================================
+1. IS-IS FUNDAMENTALS
+================================================================================
+
+1.1 What is IS-IS?
+------------------
+- Intermediate System to Intermediate System (IS-IS) routing protocol
+- Link-state protocol (similar to OSPF)
+- Originally defined for OSI CLNP (Connectionless Network Protocol)
+- Integrated IS-IS supports both OSI and IP routing
+- Uses Dijkstra's SPF (Shortest Path First) algorithm
+- Operates directly over Layer 2 (no IP required for protocol operation)
+- ISO/IEC 10589 standard
+
+1.2 IS-IS vs OSPF Comparison
+-----------------------------
+┌──────────────────────┬─────────────────────┬─────────────────────┐
+│ Feature              │ IS-IS               │ OSPF                │
+├──────────────────────┼─────────────────────┼─────────────────────┤
+│ Standard             │ ISO 10589           │ RFC 2328 (v2)       │
+│ Layer                │ Layer 2 (CLNP)      │ Layer 3 (IP)        │
+│ Addressing           │ NET/NSAP            │ IP addresses        │
+│ Area Design          │ 2-level hierarchy   │ Multi-area          │
+│ Router Levels        │ L1, L2, L1/L2       │ Internal, ABR, ASBR │
+│ LSP Flooding         │ Per level           │ Per area            │
+│ Metric               │ Default: 10         │ Cost (bandwidth)    │
+│ Adjacency Types      │ L1, L2, L1/L2       │ Neighbor types      │
+│ Hello Packets        │ Separate L1/L2      │ Single Hello        │
+│ Extensibility        │ TLV-based (flexible)│ Fixed format        │
+│ Common Use           │ ISP/Carrier         │ Enterprise          │
+└──────────────────────┴─────────────────────┴─────────────────────┘
+
+1.3 Why Use IS-IS?
+------------------
+Advantages:
+✓ Highly scalable (supports very large networks)
+✓ Fast convergence with proper tuning
+✓ Protocol runs over Layer 2 (no IP dependency)
+✓ TLV-based extensibility (easy to add features)
+✓ Single SPF calculation for all areas
+✓ Support for multiple protocols (IP, IPv6, MPLS)
+✓ Simpler area design than OSPF
+✓ No special area types (unlike OSPF stub areas)
+
+Disadvantages:
+✗ More complex addressing (NET/NSAP)
+✗ Less common in enterprise (OSPF more familiar)
+✗ Fewer features in some vendor implementations
+✗ Troubleshooting requires different skill set
+
+1.4 IS-IS Terminology
+---------------------
+- IS (Intermediate System): Router
+- ES (End System): Host/endpoint
+- NET (Network Entity Title): IS-IS address for router
+- NSAP (Network Service Access Point): OSI addressing
+- LSP (Link State PDU): Link-state advertisement
+- CSNP (Complete Sequence Number PDU): Database description
+- PSNP (Partial Sequence Number PDU): Link-state acknowledgment/request
+- IIH (IS-IS Hello): Neighbor discovery packet
+- TLV (Type-Length-Value): Extensible data structure
+- CLNS (Connectionless Network Service): OSI Layer 3 protocol
+
+================================================================================
+2. IS-IS ADDRESSING
+================================================================================
+
+2.1 NSAP Address Structure
+---------------------------
+IS-IS uses NSAP (Network Service Access Point) addresses from the OSI model.
+
+NSAP Address Format (variable length, up to 20 bytes):
+┌─────────────────────────────────────────────────────────────────┐
+│  AFI  │  Area ID  │         System ID          │  NSEL/SEL      │
+│ 1 byte│ 0-12 bytes│          6 bytes           │   1 byte       │
+└─────────────────────────────────────────────────────────────────┘
+
+Components:
+- AFI (Authority and Format Identifier): 1 byte
+  - Defines address allocation authority
+  - Common value: 49 (private/local)
+
+- Area ID: Variable length (0-12 bytes)
+  - Identifies the IS-IS area
+  - Can be structured hierarchically
+
+- System ID: 6 bytes (typically)
+  - Uniquely identifies the router within the domain
+  - Must be unique across entire IS-IS domain
+  - Often derived from MAC address or IP address
+
+- NSEL (NSAP Selector): 1 byte
+  - Identifies service at network layer (like port number)
+  - Always 0x00 for NET (Network Entity Title)
+
+2.2 NET (Network Entity Title)
+-------------------------------
+NET is the NSAP address with NSEL = 0x00, used to identify the router itself.
+
+NET Format:
+┌────────────────────────────────────────────────────────────┐
+│     AFI    │    Area ID    │   System ID   │  NSEL (00)   │
+│   49       │   0001        │  0000.0000.0001│     00       │
+└────────────────────────────────────────────────────────────┘
+
+Example NET: 49.0001.0000.0000.0001.00
+- AFI: 49 (private)
+- Area: 0001
+- System ID: 0000.0000.0001
+- NSEL: 00
+
+Common NET Formats:
+
+Method 1: Based on Loopback IP (10.1.1.1)
+NET: 49.0001.0100.0100.0100.00
+- AFI: 49
+- Area: 0001
+- System ID: 010.001.001.001 (IP in BCD)
+- NSEL: 00
+
+Method 2: Sequential Numbering
+NET: 49.0001.0000.0000.0001.00
+NET: 49.0001.0000.0000.0002.00
+NET: 49.0001.0000.0000.0003.00
+
+Method 3: Based on MAC Address
+NET: 49.0001.1234.5678.9abc.00
+- System ID from MAC: 12:34:56:78:9a:bc
+
+2.3 Area Addressing
+-------------------
+IS-IS uses area addresses to define routing boundaries.
+
+Single Area:
+All routers in Area 49.0001:
+- Router 1: 49.0001.0000.0000.0001.00
+- Router 2: 49.0001.0000.0000.0002.00
+- Router 3: 49.0001.0000.0000.0003.00
+
+Multiple Areas:
+Area 49.0001 (Level 1):
+- Router 1: 49.0001.0000.0000.0001.00
+
+Area 49.0002 (Level 1):
+- Router 2: 49.0002.0000.0000.0002.00
+
+Backbone (Level 2):
+- Router 3: 49.0003.0000.0000.0003.00 (L1/L2 router)
+
+Area Migration:
+Routers can have up to 3 NETs for area migration:
+- Old area: 49.0001.0000.0000.0001.00
+- New area: 49.0002.0000.0000.0001.00
+(Same System ID, different Area ID)
+
+================================================================================
+3. IS-IS LEVELS AND AREAS
+================================================================================
+
+3.1 IS-IS Hierarchical Design
+------------------------------
+IS-IS uses a two-level hierarchy to scale large networks.
+
+Level 1 (L1):
+- Routing within an area
+- L1 routers only know about their own area
+- Equivalent to OSPF intra-area routing
+- Default route (0.0.0.0/0) to nearest L1/L2 router
+
+Level 2 (L2):
+- Routing between areas (backbone)
+- L2 routers know about all areas
+- Forms contiguous backbone
+- Equivalent to OSPF backbone area
+
+Level 1/2 (L1/L2):
+- Participates in both L1 and L2 routing
+- Connects L1 areas to L2 backbone
+- Equivalent to OSPF ABR (Area Border Router)
+- Maintains separate LSDB for L1 and L2
+
+3.2 Router Types
+----------------
+
+L1 Router (Level 1):
+- Routes within single area only
+- Forms L1 adjacencies only
+- Maintains L1 LSDB
+- Uses default route to reach other areas
+- Configuration: is-type level-1
+
+L2 Router (Level 2):
+- Routes between areas
+- Forms L2 adjacencies only
+- Maintains L2 LSDB
+- Part of backbone
+- Configuration: is-type level-2-only
+
+L1/L2 Router (Default):
+- Routes within area (L1) and between areas (L2)
+- Forms both L1 and L2 adjacencies
+- Maintains separate L1 and L2 LSDB
+- Advertises L1 prefixes into L2
+- Injects default route into L1
+- Configuration: is-type level-1-2
+
+3.3 Area Design Rules
+---------------------
+1. L2 backbone must be contiguous (no partitions)
+2. L1 areas can be discontiguous
+3. All L1 routers in an area must have same area ID
+4. L1/L2 routers connect L1 areas to L2 backbone
+5. Traffic between L1 areas goes through L2 backbone
+6. L1 routers use closest L1/L2 router as default gateway
+
+Example Topology:
+┌──────────────────────────────────────────────────────────────┐
+│                    Level 2 Backbone                          │
+│   [L2]────[L2]────[L1/L2]────[L2]────[L1/L2]────[L2]        │
+│                      │                   │                    │
+│                      │                   │                    │
+│              ┌───────┴────────┐   ┌──────┴────────┐          │
+│              │  Area 49.0001  │   │  Area 49.0002 │          │
+│              │  [L1]─[L1]     │   │  [L1]─[L1]    │          │
+│              └────────────────┘   └───────────────┘          │
+└──────────────────────────────────────────────────────────────┘
+
+================================================================================
+4. IS-IS PACKET TYPES
+================================================================================
+
+IS-IS uses Protocol Data Units (PDUs) for communication. All PDUs are
+encapsulated directly in Layer 2 frames.
+
+4.1 Hello PDUs (IIH - IS-IS Hello)
+-----------------------------------
+Used for neighbor discovery and adjacency maintenance.
+
+Three types of Hello packets:
+
+1. Level 1 LAN Hello
+   - Sent on broadcast networks
+   - Multicast address: 01-80-C2-00-00-14 (AllL1ISs)
+   - Discovers L1 neighbors
+   - Elects DIS (Designated IS) for L1
+
+2. Level 2 LAN Hello
+   - Sent on broadcast networks
+   - Multicast address: 01-80-C2-00-00-15 (AllL2ISs)
+   - Discovers L2 neighbors
+   - Elects DIS (Designated IS) for L2
+
+3. Point-to-Point Hello
+   - Sent on point-to-point links
+   - Single hello type (no separate L1/L2)
+   - Contains level information
+   - No DIS election needed
+
+Hello Interval:
+- Default: 10 seconds (LAN)
+- Default: 10 seconds (P2P)
+- Configurable per interface
+
+Hold Time:
+- Default: 3 × Hello interval (30 seconds)
+- If no Hello received within hold time, adjacency declared down
+
+4.2 Link State PDUs (LSP)
+--------------------------
+Advertise routing information (similar to OSPF LSA).
+
+LSP Types:
+- Level 1 LSP: Contains L1 routing information
+- Level 2 LSP: Contains L2 routing information
+
+LSP Characteristics:
+- Contains TLVs (Type-Length-Value) for flexibility
+- Sequence number for versioning
+- Remaining lifetime (similar to OSPF age)
+- Checksum for integrity
+- Flooding across area (L1) or backbone (L2)
+
+LSP Identifier Format:
+System-ID.Pseudonode-ID.LSP-Number
+
+Example: 0000.0000.0001.00-00
+- System ID: 0000.0000.0001
+- Pseudonode ID: 00 (0 = router LSP, non-zero = LAN pseudonode)
+- LSP Number: 00 (fragment number)
+
+LSP Flooding:
+1. Router generates LSP when topology changes
+2. LSP flooded to all neighbors in same level
+3. Neighbors flood to their neighbors (except source)
+4. LSP installed in LSDB
+5. Acknowledgment via PSNP
+
+4.3 Complete Sequence Number PDU (CSNP)
+----------------------------------------
+Describes complete LSDB (like OSPF Database Description).
+
+CSNP Types:
+- Level 1 CSNP: L1 database summary
+- Level 2 CSNP: L2 database summary
+
+CSNP Usage:
+- On LAN: DIS sends periodic CSNPs (default: 10 seconds)
+- On P2P: Sent only during initial synchronization
+- Contains summary of all LSPs in LSDB
+- Used to detect missing LSPs
+
+4.4 Partial Sequence Number PDU (PSNP)
+---------------------------------------
+Acknowledges LSPs and requests missing LSPs.
+
+PSNP Types:
+- Level 1 PSNP
+- Level 2 PSNP
+
+PSNP Usage:
+- Acknowledges received LSPs (on P2P links)
+- Requests missing LSPs (after CSNP comparison)
+- Contains one or more LSP identifiers
+
+4.5 IS-IS Encapsulation
+------------------------
+IS-IS runs directly over Layer 2 (no IP required).
+
+Ethernet Frame:
+┌──────────────────────────────────────────────────────────────┐
+│ Dst MAC │ Src MAC │ Length │ LLC │ IS-IS PDU │ FCS           │
+└──────────────────────────────────────────────────────────────┘
+
+LLC Header (3 bytes):
+- DSAP: 0xFE (ISO CLNS)
+- SSAP: 0xFE
+- Control: 0x03
+
+Destination MAC Addresses:
+- All L1 ISs: 01-80-C2-00-00-14
+- All L2 ISs: 01-80-C2-00-00-15
+
+EtherType: Not used (LLC encapsulation)
+
+================================================================================
+5. IS-IS ADJACENCY FORMATION
+================================================================================
+
+5.1 Adjacency States
+--------------------
+IS-IS adjacency goes through three states:
+
+1. DOWN
+   - No Hellos received
+   - Initial state
+   - Adjacency does not exist
+
+2. INITIALIZING (Init)
+   - Hello received but local router not listed
+   - Waiting for two-way communication
+   - Only on P2P links
+
+3. UP
+   - Bidirectional communication established
+   - Local router ID in neighbor's Hello
+   - Can exchange LSPs
+
+Note: LAN interfaces don't have INITIALIZING state (only DOWN and UP)
+
+5.2 LAN Adjacency Formation
+----------------------------
+Process:
+1. Router sends L1 and/or L2 Hello packets (multicast)
+2. Neighbor receives Hello
+3. If parameters match, adjacency forms (UP state)
+4. DIS election occurs
+5. DIS sends periodic CSNPs
+6. Routers synchronize LSDBs
+
+Hello Matching Criteria:
+- Area ID must match (for L1)
+- MTU must match (mismatch causes issues)
+- Authentication must match (if configured)
+
+DIS (Designated Intermediate System):
+- Similar to OSPF DR but with differences
+- Elected based on priority (0-127, default 64)
+- Tie-breaker: Highest SNPA (MAC address)
+- DIS generates pseudonode LSP for LAN
+- DIS sends periodic CSNPs
+- Preemption: Higher priority router preempts current DIS
+- No BDR (Backup DIS) - all routers fully adjacent
+
+5.3 Point-to-Point Adjacency Formation
+---------------------------------------
+Three-Way Handshake (RFC 5303):
+
+State 1: DOWN
+- Router A sends Hello (no neighbor info)
+- State: DOWN
+
+State 2: INITIALIZING
+- Router B receives Hello, sends Hello with A in neighbor list
+- Router A receives Hello from B
+- State: INITIALIZING
+
+State 3: UP
+- Router A sends Hello with B in neighbor list
+- Both routers see each other in Hello
+- State: UP
+- Can now exchange LSPs
+
+Without Three-Way Handshake (Legacy):
+- Single Hello establishes adjacency
+- Can cause issues during link flapping
+- RFC 5303 three-way handshake recommended
+
+5.4 Adjacency Types
+-------------------
+
+Level 1 Adjacency:
+- Between L1 or L1/L2 routers in same area
+- Exchange L1 LSPs only
+- Used for intra-area routing
+
+Level 2 Adjacency:
+- Between L2 or L1/L2 routers
+- Exchange L2 LSPs only
+- Used for inter-area routing
+- Forms backbone
+
+Level 1/2 Adjacency (on same link):
+- L1/L2 routers form both L1 and L2 adjacency
+- Exchange both L1 and L2 LSPs
+- Separate Hello packets for each level
+
+================================================================================
+6. IS-IS LINK STATE DATABASE (LSDB)
+================================================================================
+
+6.1 LSDB Structure
+------------------
+Each IS-IS level maintains separate LSDB:
+- Level 1 LSDB: Contains L1 LSPs for area
+- Level 2 LSDB: Contains L2 LSPs for all areas
+
+LSDB Contents:
+- LSPs from all routers in same level
+- Each LSP identified by System-ID.Pseudonode-ID.LSP-Number
+- Sequence numbers for versioning
+- Remaining lifetime for aging
+
+6.2 LSP Types
+-------------
+
+Router LSP (Pseudonode-ID = 00):
+- Generated by every router
+- Contains:
+  - Reachable neighbors (adjacencies)
+  - IP prefixes (via TLVs)
+  - IS-IS level
+  - Metric information
+
+Example: 1921.6800.1001.00-00
+- System ID: 1921.6800.1001 (based on 192.168.1.1)
+- Pseudonode: 00 (router LSP)
+- Fragment: 00
+
+Pseudonode LSP (Pseudonode-ID ≠ 00):
+- Generated by DIS for LAN segments
+- Represents LAN as virtual node
+- Lists all routers on LAN
+- Simplifies topology
+
+Example: 1921.6800.1001.01-00
+- System ID: 1921.6800.1001 (DIS)
+- Pseudonode: 01 (LAN identifier)
+- Fragment: 00
+
+6.3 LSP Flooding
+----------------
+LSP Flooding Process:
+
+1. Trigger:
+   - Interface state change
+   - Metric change
+   - New prefix
+   - Configuration change
+
+2. Generation:
+   - Router increments sequence number
+   - Creates new LSP
+   - Resets remaining lifetime (1200 seconds default)
+
+3. Flooding:
+   - Sends LSP to all neighbors (same level)
+   - Neighbors compare sequence number
+   - If newer, flood to other neighbors (except source)
+   - If older, ignore or send newer version back
+
+4. Acknowledgment:
+   - On LAN: Implicit via DIS CSNPs
+   - On P2P: Explicit via PSNPs
+
+5. Installation:
+   - LSP installed in LSDB
+   - SPF recalculation triggered (may be delayed)
+
+LSP Refresh:
+- LSPs refreshed every 900 seconds (15 minutes)
+- Prevents LSP from aging out (1200 second lifetime)
+- Sequence number incremented on refresh
+
+6.4 LSDB Synchronization
+-------------------------
+
+On LAN (Broadcast Network):
+1. Routers exchange Hellos
+2. DIS elected
+3. DIS sends periodic CSNPs (every 10 seconds)
+4. Routers compare CSNP with local LSDB
+5. Missing LSPs requested via PSNP
+6. Requested LSPs sent by DIS or other routers
+7. LSDB synchronized
+
+On P2P (Point-to-Point):
+1. Adjacency forms (UP state)
+2. Both routers send CSNP (one-time)
+3. Compare CSNP with local LSDB
+4. Request missing LSPs via PSNP
+5. Send requested LSPs
+6. Acknowledge received LSPs via PSNP
+7. LSDB synchronized
+
+================================================================================
+7. IS-IS METRICS
+================================================================================
+
+7.1 Metric Types
+----------------
+
+Narrow Metrics (Original):
+- 6-bit metric per link
+- Range: 1-63 per link
+- Maximum path metric: 1023
+- Default metric: 10
+- Limitation: Doesn't scale for large networks
+
+Wide Metrics (Extended):
+- 24-bit metric (RFC 5305)
+- Range: 1-16,777,215 per link
+- Maximum path metric: 4,294,967,295
+- Allows for TE (Traffic Engineering)
+- Can reference link bandwidth
+
+Metric Calculation:
+- Default: All interfaces = 10 (regardless of bandwidth)
+- Manual configuration recommended
+- No auto-cost like OSPF
+
+7.2 Metric Configuration
+-------------------------
+
+Cisco IOS/IOS-XE:
+interface GigabitEthernet0/0
+ isis metric 100 level-1
+ isis metric 50 level-2
+
+! Enable wide metrics
+router isis
+ metric-style wide
+
+Juniper Junos:
+set protocols isis interface ge-0/0/0 level 1 metric 100
+set protocols isis interface ge-0/0/0 level 2 metric 50
+set protocols isis level 1 wide-metrics-only
+set protocols isis level 2 wide-metrics-only
+
+7.3 Metric Best Practices
+--------------------------
+✓ Use wide metrics (metric-style wide)
+✓ Configure metrics based on link bandwidth
+✓ Use consistent metric scheme across network
+✓ Higher bandwidth = lower metric
+✓ Document metric assignment strategy
+
+Example Metric Scheme:
+- 10 GbE: 10
+- 1 GbE: 100
+- 100 Mbps: 1000
+
+================================================================================
+8. IS-IS ROUTE CALCULATION
+================================================================================
+
+8.1 SPF Algorithm (Dijkstra)
+-----------------------------
+IS-IS uses Dijkstra's Shortest Path First algorithm.
+
+Process:
+1. Build topology graph from LSDB
+2. Place self as root of SPF tree
+3. Calculate shortest path to all destinations
+4. Install best routes in routing table
+
+SPF Tree Components:
+- Root: Local router
+- Nodes: Other routers (from LSPs)
+- Edges: Links with metrics
+- Leaves: Prefixes
+
+8.2 SPF Triggers
+----------------
+SPF recalculation triggered by:
+- New LSP received
+- LSP content change
+- LSP timeout/deletion
+- Adjacency up/down
+
+SPF Throttling (to prevent CPU overload):
+- Initial delay: 50 ms (default)
+- Secondary delay: 200 ms
+- Maximum delay: 5000 ms
+- Exponential backoff during instability
+
+Configuration (Cisco):
+router isis
+ spf-interval level-1 1 50 200
+ spf-interval level-2 1 50 200
+ ! initial-wait, short-wait, long-wait (ms)
+
+8.3 Route Preference
+--------------------
+Within IS-IS:
+1. L1 routes preferred over L2 routes (for destinations in same area)
+2. Lower metric preferred
+3. Equal metrics = ECMP (if enabled)
+
+Between Routing Protocols (Administrative Distance - Cisco):
+- Directly connected: 0
+- Static: 1
+- eBGP: 20
+- EIGRP (internal): 90
+- IGRP: 100
+- OSPF: 110
+- IS-IS: 115 ← IS-IS
+- RIP: 120
+- EIGRP (external): 170
+- iBGP: 200
+
+8.4 Equal Cost Multi-Path (ECMP)
+---------------------------------
+IS-IS supports ECMP for load balancing.
+
+Configuration (Cisco):
+router isis
+ maximum-paths 4
+
+Configuration (Juniper):
+set protocols isis maximum-ecmp 4
+
+Requirements for ECMP:
+- Equal metrics to destination
+- Multiple paths via SPF
+- Maximum-paths configured (default often 4)
+
+================================================================================
+9. IS-IS TLVs (TYPE-LENGTH-VALUE)
+================================================================================
+
+9.1 TLV Structure
+-----------------
+IS-IS uses TLVs for extensibility.
+
+TLV Format:
+┌────────────────────────────────────────┐
+│  Type (1 byte)  │  Length (1 byte)  │  Value (variable)  │
+└────────────────────────────────────────┘
+
+Benefits:
+- Easy to add new features
+- Backward compatibility
+- Flexible encoding
+
+9.2 Common TLVs
+---------------
+
+TLV 1: Area Addresses
+- Contains area IDs
+- Used in Hellos and LSPs
+
+TLV 2: IS Reachability (Narrow)
+- Lists neighbor routers
+- 6-bit metrics
+- Legacy
+
+TLV 22: Extended IS Reachability (Wide)
+- Lists neighbor routers
+- 24-bit metrics
+- Supports sub-TLVs for TE
+
+TLV 128: IP Internal Reachability (Narrow)
+- IPv4 prefixes within area
+- 6-bit metrics
+
+TLV 130: IP External Reachability (Narrow)
+- IPv4 prefixes redistributed into IS-IS
+- 6-bit metrics
+
+TLV 135: Extended IP Reachability (Wide)
+- IPv4 prefixes
+- 32-bit metrics
+- Supports sub-TLVs
+- Preferred over TLV 128/130
+
+TLV 137: Dynamic Hostname
+- Maps System ID to hostname
+- Simplifies troubleshooting
+
+TLV 232: IPv6 Interface Address
+- IPv6 address of interface
+
+TLV 236: IPv6 Reachability
+- IPv6 prefixes
+- 32-bit metrics
+
+9.3 Sub-TLVs
+------------
+Sub-TLVs provide additional information within main TLVs.
+
+Common Sub-TLVs (for TLV 22 - Extended IS Reachability):
+- Sub-TLV 3: Administrative Group (color)
+- Sub-TLV 6: IPv4 Interface Address
+- Sub-TLV 8: IPv4 Neighbor Address
+- Sub-TLV 9: Maximum Link Bandwidth
+- Sub-TLV 10: Maximum Reservable Bandwidth
+- Sub-TLV 11: Unreserved Bandwidth
+
+Used for MPLS Traffic Engineering (MPLS-TE)
+
+================================================================================
+10. IS-IS AUTHENTICATION
+================================================================================
+
+10.1 Authentication Types
+--------------------------
+IS-IS supports authentication for security.
+
+Authentication Levels:
+1. Level 1 authentication (intra-area)
+2. Level 2 authentication (inter-area)
+3. Interface authentication (Hello packets)
+
+Authentication Modes:
+- Clear-text password (insecure, not recommended)
+- HMAC-MD5 (RFC 5304)
+- HMAC-SHA (more secure, RFC 5310)
+
+10.2 Authentication Configuration
+----------------------------------
+
+Cisco IOS/IOS-XE:
+
+! Global authentication (LSPs, CSNPs, PSNPs)
+router isis
+ authentication mode md5 level-1
+ authentication key-chain ISIS-KEY level-1
+ authentication mode md5 level-2
+ authentication key-chain ISIS-KEY level-2
+
+! Interface authentication (Hellos)
+interface GigabitEthernet0/0
+ isis authentication mode md5
+ isis authentication key-chain ISIS-KEY
+
+! Key chain definition
+key chain ISIS-KEY
+ key 1
+  key-string MySecretPassword123
+  accept-lifetime 00:00:00 Jan 1 2024 infinite
+  send-lifetime 00:00:00 Jan 1 2024 infinite
+
+Juniper Junos:
+
+set protocols isis level 1 authentication-key "$9$encrypted"
+set protocols isis level 1 authentication-type md5
+set protocols isis level 2 authentication-key "$9$encrypted"
+set protocols isis level 2 authentication-type md5
+
+set protocols isis interface ge-0/0/0 level 1 hello-authentication-key "$9$encrypted"
+set protocols isis interface ge-0/0/0 level 1 hello-authentication-type md5
+
+10.3 Authentication Best Practices
+-----------------------------------
+✓ Use HMAC-MD5 minimum (HMAC-SHA preferred)
+✓ Never use clear-text passwords
+✓ Authenticate at both interface and routing level
+✓ Use key chains for key rotation
+✓ Separate keys for L1 and L2
+✓ Regular password rotation
+✓ Coordinate key changes across neighbors
+
+================================================================================
+11. IS-IS ADVANCED FEATURES
+================================================================================
+
+11.1 Route Leaking
+------------------
+By default, L2 routes are NOT leaked into L1 areas (only default route).
+Route leaking allows specific L2 routes to be advertised into L1.
+
+Use Cases:
+- Advertising specific prefixes to L1 routers
+- Avoiding suboptimal routing via default route
+- Inter-area traffic optimization
+
+Configuration (Cisco):
+router isis
+ redistribute isis ip level-2 into level-1 route-map LEAK
+
+route-map LEAK permit 10
+ match ip address prefix-list IMPORTANT-PREFIXES
+
+ip prefix-list IMPORTANT-PREFIXES permit 10.1.0.0/16
+
+Configuration (Juniper):
+set protocols isis level 1 export LEAK-POLICY
+
+set policy-options policy-statement LEAK-POLICY term 1 from protocol isis
+set policy-options policy-statement LEAK-POLICY term 1 from level 2
+set policy-options policy-statement LEAK-POLICY term 1 from route-filter 10.1.0.0/16 exact
+set policy-options policy-statement LEAK-POLICY term 1 then accept
+
+11.2 Overload Bit (OL Bit)
+---------------------------
+Router sets overload bit in LSP to avoid transit traffic.
+
+Use Cases:
+- Router under stress (CPU, memory)
+- Planned maintenance
+- Prevent transit traffic while keeping adjacencies
+
+Behavior:
+- Router still reachable for directly connected prefixes
+- SPF ignores router for transit paths
+- Router continues to participate in IS-IS
+
+Configuration (Cisco):
+router isis
+ set-overload-bit on-startup 300
+ ! Set OL bit for 300 seconds after boot
+
+Configuration (Juniper):
+set protocols isis overload timeout 300
+
+11.3 IS-IS for IPv6
+-------------------
+IS-IS supports IPv6 natively (no separate protocol like OSPFv3).
+
+Single-Topology IS-IS (Legacy):
+- Separate SPF calculations for IPv4 and IPv6
+- Inefficient
+
+Multi-Topology IS-IS (MT-ISIS):
+- RFC 5120
+- Single SPF calculation
+- Separate topologies for IPv4 and IPv6
+- More efficient
+
+Configuration (Cisco - Multi-Topology):
+router isis
+ metric-style wide
+ address-family ipv6
+  multi-topology
+ exit-address-family
+
+interface GigabitEthernet0/0
+ ipv6 router isis
+ isis ipv6 metric 10
+
+Configuration (Juniper):
+set protocols isis level 1 wide-metrics-only
+set protocols isis level 2 wide-metrics-only
+set protocols isis interface ge-0/0/0 family inet6
+
+11.4 BFD (Bidirectional Forwarding Detection)
+----------------------------------------------
+BFD provides fast failure detection for IS-IS.
+
+Benefits:
+- Sub-second failure detection
+- Offloads keepalive to hardware
+- Works with both LAN and P2P
+
+Configuration (Cisco):
+interface GigabitEthernet0/0
+ isis bfd
+
+bfd interval 300 min_rx 300 multiplier 3
+
+Configuration (Juniper):
+set protocols isis interface ge-0/0/0 bfd-liveness-detection minimum-interval 300
+set protocols isis interface ge-0/0/0 bfd-liveness-detection multiplier 3
+
+11.5 Graceful Restart
+---------------------
+Allows IS-IS to maintain forwarding during control plane restart.
+
+Configuration (Cisco):
+router isis
+ nsf cisco
+
+Configuration (Juniper):
+set protocols isis graceful-restart
+
+11.6 MPLS Traffic Engineering
+------------------------------
+IS-IS supports MPLS-TE extensions.
+
+Requirements:
+- Wide metrics enabled
+- MPLS-TE extensions enabled
+- RSVP-TE configured
+
+Configuration (Cisco):
+router isis
+ metric-style wide
+ mpls traffic-eng router-id Loopback0
+ mpls traffic-eng level-2
+
+interface GigabitEthernet0/0
+ mpls traffic-eng tunnels
+ isis mpls traffic-eng level-2
+
+Configuration (Juniper):
+set protocols isis traffic-engineering family inet shortcuts
+set protocols isis level 2 traffic-engineering
+set protocols isis interface ge-0/0/0 level 2 te-metric 100
+
+================================================================================
+12. IS-IS CONFIGURATION EXAMPLES
+================================================================================
+
+12.1 Basic IS-IS Configuration (Cisco IOS/IOS-XE)
+--------------------------------------------------
+! Enable IS-IS routing process
+router isis CORE
+ net 49.0001.1921.6800.1001.00
+ is-type level-1-2
+ metric-style wide
+ log-adjacency-changes
+
+! Configure interfaces
+interface Loopback0
+ ip address 192.168.1.1 255.255.255.255
+ ip router isis CORE
+ isis circuit-type level-1-2
+
+interface GigabitEthernet0/0
+ ip address 10.0.1.1 255.255.255.252
+ ip router isis CORE
+ isis circuit-type level-2-only
+ isis metric 100 level-2
+ isis network point-to-point
+
+interface GigabitEthernet0/1
+ ip address 10.0.2.1 255.255.255.0
+ ip router isis CORE
+ isis circuit-type level-1
+ isis metric 10 level-1
+
+12.2 IS-IS with Authentication (Cisco)
+---------------------------------------
+! Define key chain
+key chain ISIS-AUTH
+ key 1
+  key-string StrongPassword123!
+  accept-lifetime 00:00:00 Jan 1 2024 infinite
+  send-lifetime 00:00:00 Jan 1 2024 infinite
+
+! Configure IS-IS with authentication
+router isis CORE
+ net 49.0001.1921.6800.1001.00
+ is-type level-1-2
+ authentication mode md5 level-1
+ authentication key-chain ISIS-AUTH level-1
+ authentication mode md5 level-2
+ authentication key-chain ISIS-AUTH level-2
+
+! Interface authentication
+interface GigabitEthernet0/0
+ ip router isis CORE
+ isis authentication mode md5
+ isis authentication key-chain ISIS-AUTH
+
+12.3 IS-IS IPv6 Configuration (Cisco)
+--------------------------------------
+router isis CORE
+ net 49.0001.1921.6800.1001.00
+ is-type level-2-only
+ metric-style wide
+ address-family ipv6
+  multi-topology
+ exit-address-family
+
+interface GigabitEthernet0/0
+ ipv6 address 2001:db8:0:1::1/64
+ ipv6 router isis CORE
+ isis ipv6 metric 100 level-2
+
+12.4 IS-IS Configuration (Juniper Junos)
+-----------------------------------------
+# Configure IS-IS
+set protocols isis level 1 wide-metrics-only
+set protocols isis level 2 wide-metrics-only
+set protocols isis level 1 authentication-key "$9$encrypted"
+set protocols isis level 1 authentication-type md5
+set protocols isis reference-bandwidth 10g
+
+# Configure interfaces
+set interfaces ge-0/0/0 unit 0 family inet address 10.0.1.1/30
+set interfaces ge-0/0/0 unit 0 family iso
+set protocols isis interface ge-0/0/0 point-to-point
+set protocols isis interface ge-0/0/0 level 2 metric 100
+
+set interfaces lo0 unit 0 family inet address 192.168.1.1/32
+set interfaces lo0 unit 0 family iso address 49.0001.1921.6800.1001.00
+
+# Enable IS-IS on interfaces
+set protocols isis interface ge-0/0/0
+set protocols isis interface lo0
+
+12.5 IS-IS Configuration (Arista EOS)
+--------------------------------------
+router isis CORE
+ net 49.0001.1921.6800.1001.00
+ is-type level-1-2
+ !
+ address-family ipv4 unicast
+
+interface Loopback0
+ ip address 192.168.1.1/32
+ isis enable CORE
+ isis circuit-type level-1-2
+
+interface Ethernet1
+ ip address 10.0.1.1/30
+ isis enable CORE
+ isis circuit-type level-2
+ isis metric 100 level-2
+ isis network point-to-point
+
+12.6 IS-IS with MPLS-TE (Cisco)
+--------------------------------
+! Enable MPLS and RSVP
+mpls traffic-eng tunnels
+mpls label protocol ldp
+
+! Configure IS-IS for MPLS-TE
+router isis CORE
+ net 49.0001.1921.6800.1001.00
+ is-type level-2-only
+ metric-style wide
+ mpls traffic-eng router-id Loopback0
+ mpls traffic-eng level-2
+
+! Configure interface for MPLS-TE
+interface GigabitEthernet0/0
+ ip address 10.0.1.1 255.255.255.252
+ ip router isis CORE
+ mpls traffic-eng tunnels
+ ip rsvp bandwidth 1000000
+ isis mpls traffic-eng level-2
+
+12.7 IS-IS with BFD (Cisco)
+----------------------------
+! Configure BFD
+bfd interval 300 min_rx 300 multiplier 3
+
+! Enable BFD for IS-IS
+router isis CORE
+ net 49.0001.1921.6800.1001.00
+
+interface GigabitEthernet0/0
+ ip router isis CORE
+ isis bfd
+
+================================================================================
+13. IS-IS VERIFICATION AND TROUBLESHOOTING
+================================================================================
+
+13.1 Verification Commands
+---------------------------
+
+Cisco IOS/IOS-XE:
+
+# Show IS-IS neighbors
+show isis neighbors
+show isis neighbors detail
+
+# Show IS-IS database
+show isis database
+show isis database detail
+show isis database verbose
+
+# Show IS-IS topology
+show isis topology
+
+# Show IS-IS routes
+show isis route
+
+# Show IS-IS interface information
+show clns interface
+show clns neighbors
+
+# Show IS-IS protocol information
+show isis protocol
+show clns protocol
+
+# Show specific LSP
+show isis database 1921.6800.1001.00-00 detail
+
+# Show IS-IS SPF log
+show isis spf-log
+
+Cisco IOS-XR:
+
+show isis neighbors
+show isis database
+show isis route
+show isis interface
+show isis adjacency
+show isis topology
+
+Juniper Junos:
+
+show isis adjacency
+show isis database
+show isis route
+show isis interface
+show isis statistics
+show isis spf log
+
+Arista EOS:
+
+show isis neighbors
+show isis database
+show isis topology
+show isis interface
+
+13.2 Common Issues and Troubleshooting
+---------------------------------------
+
+Issue: Adjacency not forming
+Symptoms: Neighbors not appearing in "show isis neighbors"
+
+Troubleshooting:
+1. Check physical connectivity
+   show interface <interface>
+
+2. Check IS-IS enabled on interface
+   show clns interface (Cisco)
+
+3. Check area mismatch (L1 adjacency)
+   show isis database detail
+
+4. Check authentication
+   debug isis adj-packets (Cisco)
+
+5. Check MTU mismatch
+   show interface <interface> | include MTU
+
+6. Check IS-IS level compatibility
+   show clns interface (look for circuit-type)
+
+Issue: Routes not in routing table
+Symptoms: Prefixes in IS-IS database but not in routing table
+
+Troubleshooting:
+1. Check if route in IS-IS database
+   show isis database detail
+
+2. Verify SPF calculation
+   show isis spf-log
+
+3. Check if better route exists from another protocol
+   show ip route <prefix>
+
+4. Verify metric and reachability
+   show isis topology
+
+Issue: LSP database not synchronized
+Symptoms: Different LSPs on different routers
+
+Troubleshooting:
+1. Check CSNP/PSNP operation
+   debug isis update-packets (Cisco)
+
+2. Verify MTU settings
+   show interface <interface>
+
+3. Check for LSP corruption
+   show isis database detail
+
+4. Clear ISIS process (last resort)
+   clear isis * (Cisco)
+
+Issue: DIS election not working correctly
+Symptoms: Wrong router elected as DIS
+
+Troubleshooting:
+1. Check IS-IS priority
+   show clns interface
+
+2. Verify SNPA (MAC address)
+   show clns neighbors detail
+
+3. Check for preemption
+   (IS-IS DIS preempts unlike OSPF DR)
+
+Issue: Suboptimal routing
+Symptoms: Traffic not taking expected path
+
+Troubleshooting:
+1. Check metrics
+   show isis database detail
+
+2. Verify wide vs narrow metrics
+   show isis protocol
+
+3. Check for overload bit
+   show isis database detail (look for OL bit)
+
+4. Review route leaking configuration
+   show route-map
+
+13.3 Debug Commands (Use with Caution!)
+----------------------------------------
+
+Cisco IOS/IOS-XE:
+debug isis adj-packets         ! Adjacency/Hello packets
+debug isis update-packets       ! LSP/CSNP/PSNP packets
+debug isis spf-events           ! SPF calculations
+debug isis spf-statistics       ! SPF statistics
+debug isis spf-triggers         ! What triggered SPF
+
+Limit debugging:
+debug isis adj-packets interface GigabitEthernet0/0
+
+Turn off all debugging:
+no debug all
+undebug all
+
+Juniper Junos:
+set protocols isis traceoptions file isis-debug
+set protocols isis traceoptions flag all
+
+Clear trace:
+clear log isis-debug
+
+================================================================================
+14. IS-IS BEST PRACTICES
+================================================================================
+
+14.1 Design Best Practices
+---------------------------
+☐ Use wide metrics (metric-style wide)
+☐ Enable multi-topology for IPv6
+☐ Plan NET addressing scheme (consistent System ID)
+☐ Use L1/L2 hierarchy for large networks
+☐ Keep L2 backbone contiguous
+☐ Use point-to-point network type on P2P links
+☐ Configure BFD for fast convergence
+☐ Enable graceful restart
+☐ Use meaningful hostnames (TLV 137)
+
+14.2 Addressing Best Practices
+-------------------------------
+☐ Derive System ID from loopback IP (for easy identification)
+☐ Use consistent AFI (49 for private)
+☐ Plan area numbering scheme
+☐ Keep System ID unique across entire domain
+☐ Document NET assignments
+☐ Allow for future area expansion
+
+14.3 Scalability Best Practices
+--------------------------------
+☐ Use L1/L2 hierarchy (not flat L2-only)
+☐ Limit LSP size (use summarization)
+☐ Configure SPF throttling
+☐ Monitor LSDB size
+☐ Use route summarization at area boundaries
+☐ Limit number of routes per area
+☐ Consider route leaking carefully (can add complexity)
+
+14.4 Security Best Practices
+-----------------------------
+☐ Enable authentication (HMAC-MD5 minimum)
+☐ Use separate authentication for L1 and L2
+☐ Implement interface authentication
+☐ Use key chains for key rotation
+☐ Filter IS-IS at network edge (don't run to untrusted devices)
+☐ Monitor for unexpected adjacencies
+☐ Log adjacency changes
+
+14.5 Operational Best Practices
+--------------------------------
+☐ Use descriptive interface descriptions
+☐ Enable adjacency change logging
+☐ Monitor SPF frequency
+☐ Baseline normal LSDB size
+☐ Regular backup of configurations
+☐ Document metric assignments
+☐ Test changes in lab before production
+☐ Use automation for consistency (Ansible, NAPALM)
+
+14.6 High Availability Best Practices
+--------------------------------------
+☐ Deploy BFD for sub-second failure detection
+☐ Enable graceful restart
+☐ Use overload bit during maintenance
+☐ Redundant paths with ECMP
+☐ Test failover scenarios regularly
+☐ Monitor convergence times
+☐ Plan maintenance windows
+
+14.7 Performance Best Practices
+--------------------------------
+☐ Tune SPF timers for environment
+☐ Use wide metrics
+☐ Configure appropriate Hello/Hold timers
+☐ Enable BFD (offloads to hardware/dataplane)
+☐ Monitor CPU during convergence events
+☐ Limit LSDB size
+
+================================================================================
+15. IS-IS vs OSPF: WHEN TO USE WHICH
+================================================================================
+
+15.1 Choose IS-IS When:
+-----------------------
+✓ Service provider or carrier network
+✓ Very large scale deployment (thousands of routers)
+✓ Need protocol independence (runs over L2, not IP)
+✓ Simpler area design preferred (2-level hierarchy)
+✓ MPLS core network (common in SP)
+✓ Future extensibility important (TLV-based)
+✓ Single protocol for IPv4/IPv6 preferred
+✓ Staff has IS-IS expertise
+
+15.2 Choose OSPF When:
+----------------------
+✓ Enterprise network
+✓ Smaller to medium scale (hundreds of routers)
+✓ Staff more familiar with OSPF
+✓ Multi-vendor environment (more universal support)
+✓ Need complex area types (stub, NSSA, totally stubby)
+✓ Integration with existing OSPF network
+✓ More granular area control needed
+✓ Extensive vendor support required
+
+15.3 Technical Comparison Summary
+----------------------------------
+IS-IS Advantages:
++ Runs over Layer 2 (more stable, no IP dependency)
++ TLV-based (easier to extend)
++ Single SPF for all areas
++ Native multi-protocol support
++ Simpler area design
++ Scales better to very large networks
++ Less chatty (fewer packet types)
+
+OSPF Advantages:
++ More widely known and deployed
++ Better vendor interoperability
++ More area types (stub, NSSA, etc.)
++ Integrated with IP (no CLNS needed)
++ Better documentation and training available
++ More granular stub area options
++ Easier to troubleshoot (more familiar)
+
+================================================================================
+REFERENCES AND DOCUMENTATION
+================================================================================
+
+1. Core IS-IS Specifications
+   - ISO/IEC 10589:2002: Intermediate System to Intermediate System intra-
+     domain routeing information exchange protocol
+   - RFC 1195: Use of OSI IS-IS for Routing in TCP/IP and Dual Environments
+     (Integrated IS-IS) (1990)
+   - RFC 5304: IS-IS Cryptographic Authentication (2008)
+   - RFC 5310: IS-IS Generic Cryptographic Authentication (2009)
+
+2. IS-IS Extensions
+   - RFC 3784: IS-IS extensions for Traffic Engineering (2004)
+   - RFC 5305: IS-IS Extensions for Traffic Engineering (2008)
+   - RFC 5308: Routing IPv6 with IS-IS (2008)
+   - RFC 5120: M-ISIS: Multi Topology (MT) Routing in IS-IS (2008)
+   - RFC 5303: Three-Way Handshake for IS-IS Point-to-Point Adjacencies (2008)
+   - RFC 5306: Restart Signaling for IS-IS (2008)
+   - RFC 5307: IS-IS Extensions in Support of Generalized MPLS (2008)
+
+3. IS-IS Metrics and TLVs
+   - RFC 3787: Recommendations for Interoperable IP Networks using IS-IS (2004)
+   - RFC 5301: Dynamic Hostname Exchange Mechanism for IS-IS (2008)
+   - RFC 5302: Domain-Wide Prefix Distribution with Two-Level IS-IS (2008)
+   - RFC 6232: Purge Originator Identification TLV for IS-IS (2011)
+
+4. IS-IS IPv6 Support
+   - RFC 5308: Routing IPv6 with IS-IS (2008)
+   - RFC 6119: IPv6 Traffic Engineering in IS-IS (2011)
+
+5. IS-IS Operations and Management
+   - RFC 3719: Recommendations for Interoperable Networks using IS-IS (2004)
+   - RFC 6329: IS-IS Extensions Supporting IEEE 802.1aq (2012)
+
+6. Books
+   - "IS-IS Network Design Solutions" by Abe Martey (Cisco Press, 2002)
+   - "Routing TCP/IP, Volume 1" by Jeff Doyle and Jennifer Carroll
+     (Cisco Press, 2nd Edition, 2005) - Includes IS-IS chapters
+   - "MPLS Fundamentals" by Luc De Ghein (Cisco Press, 2006) - IS-IS for MPLS
+
+7. Vendor Documentation
+   - Cisco IS-IS Configuration Guide
+     https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/iproute_isis/
+   - Juniper IS-IS Configuration Guide
+     https://www.juniper.net/documentation/us/en/software/junos/is-is/
+   - Arista IS-IS Configuration Guide
+     https://www.arista.com/en/um-eos/eos-integrated-isis
+
+8. Industry Resources
+   - IETF ISIS Working Group (concluded, RFCs stable)
+     https://datatracker.ietf.org/wg/isis/
+   - Packet Pushers IS-IS Resources
+   - ipSpace.net blog (Ivan Pepelnjak's IS-IS articles)
+
+9. Training and Certification
+   - Cisco CCNP Service Provider (IS-IS coverage)
+   - Cisco CCIE Service Provider (Advanced IS-IS)
+   - Juniper JNCIS-SP and JNCIE-SP (IS-IS focus)
+   - INE and CBT Nuggets IS-IS courses
+
+10. White Papers and Guides
+    - Cisco: IS-IS Deployment in Service Provider Networks
+    - Juniper: Day One books on IS-IS
+    - Various vendor IS-IS design guides
+
+================================================================================
+IS-IS DEPLOYMENT CHECKLIST
+================================================================================
+
+☐ Planning Phase
+  ☐ Define IS-IS domain and area structure
+  ☐ Plan NET addressing scheme (AFI, Area, System ID)
+  ☐ Determine router levels (L1, L2, L1/L2)
+  ☐ Plan metric assignments per interface
+  ☐ Document authentication strategy
+  ☐ Plan for IPv6 (multi-topology or single-topology)
+  ☐ Size routers for LSDB requirements
+
+☐ Configuration Phase
+  ☐ Configure NET addresses (unique System IDs)
+  ☐ Enable IS-IS on interfaces
+  ☐ Set appropriate router levels (is-type)
+  ☐ Configure wide metrics (metric-style wide)
+  ☐ Set interface metrics
+  ☐ Configure authentication
+  ☐ Enable BFD (if supported)
+  ☐ Configure graceful restart
+
+☐ Network Type Configuration
+  ☐ Set point-to-point on P2P links (isis network point-to-point)
+  ☐ Verify DIS election on LAN segments
+  ☐ Configure DIS priority if needed
+
+☐ Security
+  ☐ Enable authentication (HMAC-MD5 or HMAC-SHA)
+  ☐ Configure separate L1 and L2 authentication
+  ☐ Enable interface authentication
+  ☐ Implement key chains for rotation
+  ☐ Filter IS-IS at network boundaries
+  ☐ Enable adjacency logging
+
+☐ Optimization
+  ☐ Tune SPF timers
+  ☐ Configure LSP generation throttling
+  ☐ Enable BFD for fast failure detection
+  ☐ Set appropriate Hello/Hold timers
+  ☐ Configure overload-bit for maintenance
+  ☐ Plan route summarization
+
+☐ High Availability
+  ☐ Enable graceful restart
+  ☐ Configure BFD
+  ☐ Implement redundant paths
+  ☐ Test failover scenarios
+  ☐ Configure overload bit for planned maintenance
+
+☐ Testing and Validation
+  ☐ Verify all adjacencies form (show isis neighbors)
+  ☐ Check LSDB synchronization (show isis database)
+  ☐ Validate SPF calculation (show isis topology)
+  ☐ Verify routes installed (show isis route)
+  ☐ Test authentication
+  ☐ Validate metric assignments
+  ☐ Test ECMP load balancing
+  ☐ Verify convergence times
+
+☐ IPv6 (if applicable)
+  ☐ Enable multi-topology IS-IS
+  ☐ Configure IPv6 on interfaces
+  ☐ Enable IS-IS for IPv6
+  ☐ Verify IPv6 routes
+
+☐ MPLS-TE (if applicable)
+  ☐ Enable wide metrics
+  ☐ Configure MPLS-TE extensions
+  ☐ Set TE metrics
+  ☐ Verify TE database
+
+☐ Monitoring and Operations
+  ☐ Set up monitoring for adjacency state
+  ☐ Monitor LSDB size
+  ☐ Track SPF frequency
+  ☐ Alert on adjacency flaps
+  ☐ Monitor LSP generation rate
+  ☐ Document as-built configuration
+  ☐ Create operational runbooks
+
+☐ Documentation
+  ☐ Document NET addressing scheme
+  ☐ Record area assignments
+  ☐ Document metric strategy
+  ☐ List all L1/L2 boundary routers
+  ☐ Document authentication keys (securely)
+  ☐ Create network diagrams
+  ☐ Troubleshooting procedures
+
+================================================================================
+END OF DOCUMENT
+================================================================================
