@@ -76,6 +76,7 @@ Core networking concepts and fundamentals:
 | Document | Description | Key Topics |
 |----------|-------------|------------|
 | [bgp-how-it-works.txt](bgp-how-it-works.txt) | Border Gateway Protocol | BGP attributes, path selection, eBGP/iBGP, route reflectors |
+| [bgp-in-cloud-platforms.txt](bgp-in-cloud-platforms.txt) | BGP in GCP, AWS, Azure | Cloud Router, Transit Gateway, VPN Gateway, traffic engineering |
 | [isis-how-it-works.txt](isis-how-it-works.txt) | IS-IS Routing Protocol | NSAP addressing, levels, LSPs, TLVs |
 | [mpls-how-it-works.txt](mpls-how-it-works.txt) | MPLS Label Switching | Label distribution, LSPs, MPLS VPNs, traffic engineering |
 | [vxlan-how-it-works.txt](vxlan-how-it-works.txt) | VXLAN Overlay Networks | VTEP, VNI, EVPN, MAC learning |
@@ -171,6 +172,7 @@ Most documents follow this structure:
 
 2. Learn routing protocols:
    - [bgp-how-it-works.txt](bgp-how-it-works.txt)
+   - [bgp-in-cloud-platforms.txt](bgp-in-cloud-platforms.txt)
    - [isis-how-it-works.txt](isis-how-it-works.txt)
 
 3. Study vendor platforms:
@@ -199,13 +201,13 @@ Most documents follow this structure:
    - [azure-networking-best-practices.txt](azure-networking-best-practices.txt)
    - [gcp-networking-best-practices.txt](gcp-networking-best-practices.txt)
 
-3. Security best practices:
+3. BGP for hybrid connectivity:
+   - [bgp-how-it-works.txt](bgp-how-it-works.txt)
+   - [bgp-in-cloud-platforms.txt](bgp-in-cloud-platforms.txt)
+
+4. Security best practices:
    - [azure-networking-security-best-practices.txt](azure-networking-security-best-practices.txt)
    - [azure-security-best-practices.txt](azure-security-best-practices.txt)
-
-4. Hybrid connectivity:
-   - Review VPN and interconnect sections in cloud guides
-   - [bgp-how-it-works.txt](bgp-how-it-works.txt) for dynamic routing
 
 ### Service Provider Engineer
 
@@ -257,16 +259,20 @@ Most documents follow this structure:
 
 **Multi-Cloud Architect:**
 - Cloud platforms comparison
+- BGP in cloud platforms
 
 **Azure Network Engineer Associate:**
 - Azure networking best practices
 - Azure networking security best practices
+- BGP in cloud platforms (Azure sections)
 
 **Google Cloud Professional Network Engineer:**
 - GCP networking best practices
+- BGP in cloud platforms (GCP sections)
 
 **AWS Certified Advanced Networking - Specialty:**
 - Cloud platforms comparison (AWS sections)
+- BGP in cloud platforms (AWS sections)
 
 ## Contributing
 
@@ -295,8 +301,8 @@ Each document contains extensive references to:
 
 ## Document Statistics
 
-- Total documents: 22
-- Protocol explanations: 6
+- Total documents: 23
+- Protocol explanations: 7
 - Best practices guides: 7
 - Vendor CLI guides: 9
 - Foundational concepts: 2
