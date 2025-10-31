@@ -51,6 +51,7 @@ Layer 2 and Layer 3 configuration commands for various network vendors:
 
 #### Cisco Platforms
 - **Cisco IOS-XE** - Commands for Catalyst switches and ISR routers
+- **Cisco ASR 1001-X** - Commands for ASR 1001-X WAN aggregation router
 - **Cisco IOS-XR** - Commands for carrier-class routers (ASR 9000, NCS)
 - **Cisco NX-OS** - Commands for Nexus data center switches
 - **Cisco 9800 WLC** - Commands for 9800 Wireless LAN Controller
@@ -107,6 +108,7 @@ Core networking concepts and fundamentals:
 | Document | Platform | Description |
 |----------|----------|-------------|
 | [cisco-ios-xe-l2-l3-commands.txt](cisco-ios-xe-l2-l3-commands.txt) | IOS-XE | Catalyst switches, ISR routers |
+| [cisco-asr-1001-x-l2-l3-commands.txt](cisco-asr-1001-x-l2-l3-commands.txt) | ASR 1001-X | WAN aggregation, enterprise edge router |
 | [cisco-ios-xr-l2-l3-commands.txt](cisco-ios-xr-l2-l3-commands.txt) | IOS-XR | ASR 9000, NCS series |
 | [cisco-nx-os-l2-l3-commands.txt](cisco-nx-os-l2-l3-commands.txt) | NX-OS | Nexus 9000, 7000, 5000 series |
 | [cisco-9800-wlc-l2-l3-commands.txt](cisco-9800-wlc-l2-l3-commands.txt) | 9800 WLC | Wireless LAN Controller |
@@ -301,10 +303,10 @@ Each document contains extensive references to:
 
 ## Document Statistics
 
-- Total documents: 23
+- Total documents: 24
 - Protocol explanations: 7
 - Best practices guides: 7
-- Vendor CLI guides: 9
+- Vendor CLI guides: 10
 - Foundational concepts: 2
 
 ## License

@@ -1,0 +1,1043 @@
+================================================================================
+                    CISCO ASR 1001-X ROUTER
+                    LAYER 2 AND LAYER 3 CLI COMMANDS
+================================================================================
+
+The Cisco ASR 1001-X is a mid-range aggregation services router in the ASR 1000
+series, designed for enterprise WAN aggregation and internet edge. It runs
+Cisco IOS-XE software and provides advanced routing, security, and application
+services.
+
+Platform: Cisco ASR 1001-X
+Software: Cisco IOS-XE
+Use Case: Enterprise WAN aggregation, internet edge, branch office hub
+Throughput: Up to 20 Gbps
+Form Factor: 2RU
+
+================================================================================
+1. PLATFORM OVERVIEW
+================================================================================
+
+1.1 ASR 1001-X Key Features
+----------------------------
+- Cisco IOS-XE operating system
+- Embedded Services Processor (ESP) for forwarding
+- Route Processor (RP) for control plane
+- Built-in Gigabit Ethernet ports
+- Optional SPA (Shared Port Adapter) interface
+- Advanced application visibility and control
+- Integrated security features
+- Cloud services integration
+
+1.2 Hardware Specifications
+----------------------------
+Performance:
+- Throughput: Up to 20 Gbps
+- Packets per second: Up to 10 Mpps
+- Maximum routes: 1M IPv4, 512K IPv6
+- Maximum VRFs: 8,192
+- Maximum IPsec VPN tunnels: 10,000
+
+Interfaces:
+- 6x onboard Gigabit Ethernet (GE) ports (RJ-45)
+- 1x SPA bay (supports various SPAs)
+- 1x Management Ethernet port
+- 2x USB ports (for console, storage)
+
+Memory and Storage:
+- DRAM: 8 GB (default), expandable to 32 GB
+- Flash: 8 GB eUSB
+- Hard Drive: Optional 250 GB SSD
+
+Power:
+- Dual redundant power supplies (AC or DC)
+- Power consumption: 400W typical
+
+1.3 Common Use Cases
+--------------------
+- Enterprise WAN aggregation
+- Internet edge router
+- Branch office hub router
+- MPLS PE router
+- IPsec VPN concentrator
+- SD-WAN edge router
+- Cloud on-ramp
+
+1.4 IOS-XE Software Architecture
+---------------------------------
+IOS-XE uses a Linux-based architecture with separated control and data planes:
+
+Components:
+- IOSd: Traditional IOS daemon (control plane)
+- Forwarding Manager (FMAN-FP): Data plane forwarding
+- Infrastructure: Linux kernel and services
+- QuantumFlow Processor: Hardware acceleration
+
+Benefits:
+- Process-level protection (no single point of failure)
+- In-service software upgrades (ISSU)
+- Better security isolation
+- Modern programmability (NETCONF, RESTCONF, YANG)
+
+================================================================================
+2. BASIC CONFIGURATION
+================================================================================
+
+2.1 Initial Setup
+-----------------
+
+# Enter privileged EXEC mode
+Router> enable
+
+# Enter global configuration mode
+Router# configure terminal
+
+# Set hostname
+Router(config)# hostname ASR1001X-WAN
+
+# Configure domain name
+ASR1001X-WAN(config)# ip domain-name example.com
+
+# Set timezone
+ASR1001X-WAN(config)# clock timezone PST -8
+ASR1001X-WAN(config)# clock summer-time PDT recurring
+
+# Disable DNS lookups (for CLI convenience)
+ASR1001X-WAN(config)# no ip domain-lookup
+
+2.2 Management Access
+----------------------
+
+# Configure console
+ASR1001X-WAN(config)# line console 0
+ASR1001X-WAN(config-line)# logging synchronous
+ASR1001X-WAN(config-line)# exec-timeout 30 0
+ASR1001X-WAN(config-line)# exit
+
+# Configure VTY lines for SSH
+ASR1001X-WAN(config)# line vty 0 4
+ASR1001X-WAN(config-line)# transport input ssh
+ASR1001X-WAN(config-line)# login local
+ASR1001X-WAN(config-line)# exec-timeout 30 0
+ASR1001X-WAN(config-line)# logging synchronous
+ASR1001X-WAN(config-line)# exit
+
+# Create local user account
+ASR1001X-WAN(config)# username admin privilege 15 secret Str0ngP@ssw0rd
+
+# Generate SSH keys
+ASR1001X-WAN(config)# crypto key generate rsa modulus 2048
+
+# Enable SSH version 2
+ASR1001X-WAN(config)# ip ssh version 2
+ASR1001X-WAN(config)# ip ssh time-out 60
+ASR1001X-WAN(config)# ip ssh authentication-retries 3
+
+# Configure management interface (GigabitEthernet0)
+ASR1001X-WAN(config)# interface GigabitEthernet0
+ASR1001X-WAN(config-if)# description Management Interface
+ASR1001X-WAN(config-if)# ip address 192.168.1.1 255.255.255.0
+ASR1001X-WAN(config-if)# no shutdown
+ASR1001X-WAN(config-if)# exit
+
+2.3 Enable Secret and Service Password Encryption
+--------------------------------------------------
+
+# Set enable secret
+ASR1001X-WAN(config)# enable secret 5 $1$mERr$hx5rVt7rPNoS4wqbXKX7m0
+
+# Encrypt passwords in configuration
+ASR1001X-WAN(config)# service password-encryption
+
+2.4 Banner Configuration
+-------------------------
+
+ASR1001X-WAN(config)# banner login ^
+******************************************************************************
+*                      AUTHORIZED ACCESS ONLY                                *
+*  This system is for authorized use only. Unauthorized access is prohibited *
+*  and may be subject to criminal and civil penalties.                       *
+******************************************************************************
+^
+
+ASR1001X-WAN(config)# banner motd ^
+******************************************************************************
+*                  Cisco ASR 1001-X - WAN Aggregation Router                *
+*                  Contact: netops@example.com                               *
+******************************************************************************
+^
+
+================================================================================
+3. LAYER 3 INTERFACE CONFIGURATION
+================================================================================
+
+3.1 Physical Interface Configuration
+-------------------------------------
+
+# Configure GigabitEthernet interface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# description WAN Link to ISP1
+ASR1001X-WAN(config-if)# ip address 203.0.113.1 255.255.255.252
+ASR1001X-WAN(config-if)# no shutdown
+ASR1001X-WAN(config-if)# exit
+
+# Configure with DHCP client
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/1
+ASR1001X-WAN(config-if)# description Internet Connection via DHCP
+ASR1001X-WAN(config-if)# ip address dhcp
+ASR1001X-WAN(config-if)# no shutdown
+ASR1001X-WAN(config-if)# exit
+
+# Configure with secondary IP address
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-if)# description LAN Interface with Secondary IP
+ASR1001X-WAN(config-if)# ip address 10.1.1.1 255.255.255.0
+ASR1001X-WAN(config-if)# ip address 10.1.2.1 255.255.255.0 secondary
+ASR1001X-WAN(config-if)# no shutdown
+ASR1001X-WAN(config-if)# exit
+
+3.2 Loopback Interface Configuration
+-------------------------------------
+
+# Configure loopback interface (for router ID, management, iBGP)
+ASR1001X-WAN(config)# interface Loopback0
+ASR1001X-WAN(config-if)# description Router ID and Management
+ASR1001X-WAN(config-if)# ip address 10.255.255.1 255.255.255.255
+ASR1001X-WAN(config-if)# exit
+
+# Additional loopback for services
+ASR1001X-WAN(config)# interface Loopback100
+ASR1001X-WAN(config-if)# description NAT Inside Source
+ASR1001X-WAN(config-if)# ip address 192.168.100.1 255.255.255.255
+ASR1001X-WAN(config-if)# exit
+
+3.3 Interface Speed and Duplex
+-------------------------------
+
+# Manual speed/duplex configuration (if needed)
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/3
+ASR1001X-WAN(config-if)# description Legacy Device Connection
+ASR1001X-WAN(config-if)# speed 100
+ASR1001X-WAN(config-if)# duplex full
+ASR1001X-WAN(config-if)# exit
+
+# Auto-negotiation (default)
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/4
+ASR1001X-WAN(config-if)# speed auto
+ASR1001X-WAN(config-if)# duplex auto
+ASR1001X-WAN(config-if)# exit
+
+3.4 MTU Configuration
+----------------------
+
+# Set interface MTU
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# mtu 1500
+ASR1001X-WAN(config-if)# exit
+
+# Set IP MTU (for fragmentation decisions)
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# ip mtu 1500
+ASR1001X-WAN(config-if)# exit
+
+# Enable jumbo frames
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/5
+ASR1001X-WAN(config-if)# description Datacenter Link
+ASR1001X-WAN(config-if)# mtu 9000
+ASR1001X-WAN(config-if)# ip mtu 9000
+ASR1001X-WAN(config-if)# exit
+
+================================================================================
+4. SUBINTERFACES AND 802.1Q VLANS
+================================================================================
+
+4.1 Dot1Q Subinterfaces
+------------------------
+
+# Configure parent interface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/3
+ASR1001X-WAN(config-if)# description Trunk to Distribution Switch
+ASR1001X-WAN(config-if)# no ip address
+ASR1001X-WAN(config-if)# no shutdown
+ASR1001X-WAN(config-if)# exit
+
+# Configure VLAN 10 subinterface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/3.10
+ASR1001X-WAN(config-subif)# description VLAN 10 - Management
+ASR1001X-WAN(config-subif)# encapsulation dot1Q 10
+ASR1001X-WAN(config-subif)# ip address 10.10.10.1 255.255.255.0
+ASR1001X-WAN(config-subif)# exit
+
+# Configure VLAN 20 subinterface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/3.20
+ASR1001X-WAN(config-subif)# description VLAN 20 - Data
+ASR1001X-WAN(config-subif)# encapsulation dot1Q 20
+ASR1001X-WAN(config-subif)# ip address 10.10.20.1 255.255.255.0
+ASR1001X-WAN(config-subif)# exit
+
+# Configure VLAN 30 subinterface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/3.30
+ASR1001X-WAN(config-subif)# description VLAN 30 - Voice
+ASR1001X-WAN(config-subif)# encapsulation dot1Q 30
+ASR1001X-WAN(config-subif)# ip address 10.10.30.1 255.255.255.0
+ASR1001X-WAN(config-subif)# exit
+
+# Native VLAN configuration
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/3.1
+ASR1001X-WAN(config-subif)# description Native VLAN
+ASR1001X-WAN(config-subif)# encapsulation dot1Q 1 native
+ASR1001X-WAN(config-subif)# ip address 10.10.1.1 255.255.255.0
+ASR1001X-WAN(config-subif)# exit
+
+================================================================================
+5. STATIC ROUTING
+================================================================================
+
+5.1 Basic Static Routes
+------------------------
+
+# Default route
+ASR1001X-WAN(config)# ip route 0.0.0.0 0.0.0.0 203.0.113.2
+
+# Specific network route
+ASR1001X-WAN(config)# ip route 192.168.100.0 255.255.255.0 10.1.1.2
+
+# Route with administrative distance (floating static)
+ASR1001X-WAN(config)# ip route 0.0.0.0 0.0.0.0 203.0.113.6 210
+
+# Route to interface (point-to-point links)
+ASR1001X-WAN(config)# ip route 172.16.0.0 255.255.0.0 GigabitEthernet0/0/4
+
+# Permanent route (doesn't depend on interface state)
+ASR1001X-WAN(config)# ip route 10.20.0.0 255.255.0.0 10.1.1.3 permanent
+
+5.2 Static Route with Tracking
+-------------------------------
+
+# Configure IP SLA for reachability tracking
+ASR1001X-WAN(config)# ip sla 1
+ASR1001X-WAN(config-ip-sla)# icmp-echo 8.8.8.8 source-interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-ip-sla-echo)# frequency 10
+ASR1001X-WAN(config-ip-sla-echo)# exit
+ASR1001X-WAN(config)# ip sla schedule 1 life forever start-time now
+
+# Configure tracking
+ASR1001X-WAN(config)# track 1 ip sla 1 reachability
+
+# Static route with tracking
+ASR1001X-WAN(config)# ip route 0.0.0.0 0.0.0.0 203.0.113.2 track 1
+
+# Backup route without tracking (higher AD)
+ASR1001X-WAN(config)# ip route 0.0.0.0 0.0.0.0 203.0.113.6 210
+
+================================================================================
+6. DYNAMIC ROUTING - OSPF
+================================================================================
+
+6.1 OSPF Basic Configuration
+-----------------------------
+
+# Enable OSPF process
+ASR1001X-WAN(config)# router ospf 1
+ASR1001X-WAN(config-router)# router-id 10.255.255.1
+ASR1001X-WAN(config-router)# log-adjacency-changes detail
+ASR1001X-WAN(config-router)# passive-interface default
+ASR1001X-WAN(config-router)# exit
+
+# Configure interfaces for OSPF
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-if)# ip ospf 1 area 0
+ASR1001X-WAN(config-if)# ip ospf network point-to-point
+ASR1001X-WAN(config-if)# no ip ospf passive-interface
+ASR1001X-WAN(config-if)# exit
+
+# OSPF with authentication
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/3.10
+ASR1001X-WAN(config-subif)# ip ospf authentication message-digest
+ASR1001X-WAN(config-subif)# ip ospf message-digest-key 1 md5 SecurePassword123
+ASR1001X-WAN(config-subif)# ip ospf 1 area 0
+ASR1001X-WAN(config-subif)# exit
+
+6.2 OSPF Advanced Configuration
+--------------------------------
+
+# Default route origination
+ASR1001X-WAN(config)# router ospf 1
+ASR1001X-WAN(config-router)# default-information originate always metric 10 metric-type 1
+ASR1001X-WAN(config-router)# exit
+
+# Route summarization
+ASR1001X-WAN(config)# router ospf 1
+ASR1001X-WAN(config-router)# area 1 range 10.10.0.0 255.255.0.0
+ASR1001X-WAN(config-router)# exit
+
+# Distribute-list for filtering
+ASR1001X-WAN(config)# access-list 10 deny 192.168.99.0 0.0.0.255
+ASR1001X-WAN(config)# access-list 10 permit any
+ASR1001X-WAN(config)# router ospf 1
+ASR1001X-WAN(config-router)# distribute-list 10 in
+ASR1001X-WAN(config-router)# exit
+
+================================================================================
+7. DYNAMIC ROUTING - EIGRP
+================================================================================
+
+7.1 EIGRP Configuration
+------------------------
+
+# Enable EIGRP (classic configuration)
+ASR1001X-WAN(config)# router eigrp 100
+ASR1001X-WAN(config-router)# eigrp router-id 10.255.255.1
+ASR1001X-WAN(config-router)# network 10.0.0.0 0.255.255.255
+ASR1001X-WAN(config-router)# network 172.16.0.0 0.0.255.255
+ASR1001X-WAN(config-router)# passive-interface default
+ASR1001X-WAN(config-router)# no passive-interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-router)# exit
+
+# EIGRP authentication
+ASR1001X-WAN(config)# key chain EIGRP-KEYS
+ASR1001X-WAN(config-keychain)# key 1
+ASR1001X-WAN(config-keychain-key)# key-string SecureKey123
+ASR1001X-WAN(config-keychain-key)# exit
+ASR1001X-WAN(config-keychain)# exit
+
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-if)# ip authentication mode eigrp 100 md5
+ASR1001X-WAN(config-if)# ip authentication key-chain eigrp 100 EIGRP-KEYS
+ASR1001X-WAN(config-if)# exit
+
+7.2 Named EIGRP Configuration (Recommended)
+--------------------------------------------
+
+# Configure named EIGRP
+ASR1001X-WAN(config)# router eigrp ENTERPRISE
+ASR1001X-WAN(config-router)# address-family ipv4 unicast autonomous-system 100
+ASR1001X-WAN(config-router-af)# eigrp router-id 10.255.255.1
+ASR1001X-WAN(config-router-af)# network 10.0.0.0 0.255.255.255
+ASR1001X-WAN(config-router-af)# af-interface default
+ASR1001X-WAN(config-router-af-interface)# passive-interface
+ASR1001X-WAN(config-router-af-interface)# exit
+ASR1001X-WAN(config-router-af)# af-interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-router-af-interface)# no passive-interface
+ASR1001X-WAN(config-router-af-interface)# authentication mode md5
+ASR1001X-WAN(config-router-af-interface)# authentication key-chain EIGRP-KEYS
+ASR1001X-WAN(config-router-af-interface)# exit
+ASR1001X-WAN(config-router-af)# exit
+ASR1001X-WAN(config-router)# exit
+
+================================================================================
+8. DYNAMIC ROUTING - BGP
+================================================================================
+
+8.1 BGP Basic Configuration
+----------------------------
+
+# Configure BGP
+ASR1001X-WAN(config)# router bgp 65001
+ASR1001X-WAN(config-router)# bgp router-id 10.255.255.1
+ASR1001X-WAN(config-router)# bgp log-neighbor-changes
+
+# eBGP neighbor to ISP
+ASR1001X-WAN(config-router)# neighbor 203.0.113.2 remote-as 64512
+ASR1001X-WAN(config-router)# neighbor 203.0.113.2 description ISP1-Primary
+ASR1001X-WAN(config-router)# neighbor 203.0.113.2 password BGPSecret123
+
+# Configure address-family
+ASR1001X-WAN(config-router)# address-family ipv4 unicast
+ASR1001X-WAN(config-router-af)# network 203.0.113.0 mask 255.255.255.252
+ASR1001X-WAN(config-router-af)# neighbor 203.0.113.2 activate
+ASR1001X-WAN(config-router-af)# neighbor 203.0.113.2 prefix-list ALLOWED-IN in
+ASR1001X-WAN(config-router-af)# neighbor 203.0.113.2 prefix-list ALLOWED-OUT out
+ASR1001X-WAN(config-router-af)# exit-address-family
+ASR1001X-WAN(config-router)# exit
+
+# Prefix lists for filtering
+ASR1001X-WAN(config)# ip prefix-list ALLOWED-OUT permit 203.0.113.0/24
+ASR1001X-WAN(config)# ip prefix-list ALLOWED-IN permit 0.0.0.0/0 le 24
+
+8.2 iBGP Configuration
+-----------------------
+
+# iBGP neighbor (route reflector client)
+ASR1001X-WAN(config)# router bgp 65001
+ASR1001X-WAN(config-router)# neighbor 10.255.255.2 remote-as 65001
+ASR1001X-WAN(config-router)# neighbor 10.255.255.2 description iBGP-Peer
+ASR1001X-WAN(config-router)# neighbor 10.255.255.2 update-source Loopback0
+ASR1001X-WAN(config-router)# neighbor 10.255.255.2 next-hop-self
+ASR1001X-WAN(config-router)# address-family ipv4 unicast
+ASR1001X-WAN(config-router-af)# neighbor 10.255.255.2 activate
+ASR1001X-WAN(config-router-af)# exit-address-family
+ASR1001X-WAN(config-router)# exit
+
+8.3 BGP Route Reflector Configuration
+--------------------------------------
+
+ASR1001X-WAN(config)# router bgp 65001
+ASR1001X-WAN(config-router)# bgp cluster-id 1.1.1.1
+ASR1001X-WAN(config-router)# neighbor 10.255.255.10 remote-as 65001
+ASR1001X-WAN(config-router)# neighbor 10.255.255.10 update-source Loopback0
+ASR1001X-WAN(config-router)# address-family ipv4 unicast
+ASR1001X-WAN(config-router-af)# neighbor 10.255.255.10 activate
+ASR1001X-WAN(config-router-af)# neighbor 10.255.255.10 route-reflector-client
+ASR1001X-WAN(config-router-af)# exit-address-family
+ASR1001X-WAN(config-router)# exit
+
+================================================================================
+9. VRF (VIRTUAL ROUTING AND FORWARDING)
+================================================================================
+
+9.1 VRF Configuration
+---------------------
+
+# Define VRF
+ASR1001X-WAN(config)# ip vrf CUSTOMER-A
+ASR1001X-WAN(config-vrf)# description Customer A Network
+ASR1001X-WAN(config-vrf)# rd 65001:100
+ASR1001X-WAN(config-vrf)# route-target export 65001:100
+ASR1001X-WAN(config-vrf)# route-target import 65001:100
+ASR1001X-WAN(config-vrf)# exit
+
+# Assign interface to VRF
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/4
+ASR1001X-WAN(config-if)# description Customer A Connection
+ASR1001X-WAN(config-if)# ip vrf forwarding CUSTOMER-A
+ASR1001X-WAN(config-if)# ip address 10.100.1.1 255.255.255.0
+ASR1001X-WAN(config-if)# exit
+
+9.2 VRF with Static Routes
+---------------------------
+
+# Static route in VRF
+ASR1001X-WAN(config)# ip route vrf CUSTOMER-A 192.168.0.0 255.255.0.0 10.100.1.2
+
+9.3 VRF with BGP
+-----------------
+
+ASR1001X-WAN(config)# router bgp 65001
+ASR1001X-WAN(config-router)# address-family ipv4 vrf CUSTOMER-A
+ASR1001X-WAN(config-router-af)# neighbor 10.100.1.2 remote-as 65100
+ASR1001X-WAN(config-router-af)# neighbor 10.100.1.2 activate
+ASR1001X-WAN(config-router-af)# exit-address-family
+ASR1001X-WAN(config-router)# exit
+
+================================================================================
+10. NETWORK ADDRESS TRANSLATION (NAT)
+================================================================================
+
+10.1 PAT (Port Address Translation)
+------------------------------------
+
+# Configure inside and outside interfaces
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-if)# description Inside Interface
+ASR1001X-WAN(config-if)# ip nat inside
+ASR1001X-WAN(config-if)# exit
+
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# description Outside Interface to Internet
+ASR1001X-WAN(config-if)# ip nat outside
+ASR1001X-WAN(config-if)# exit
+
+# Define inside source addresses (ACL)
+ASR1001X-WAN(config)# access-list 1 permit 10.0.0.0 0.255.255.255
+
+# Configure PAT
+ASR1001X-WAN(config)# ip nat inside source list 1 interface GigabitEthernet0/0/0 overload
+
+10.2 Static NAT
+----------------
+
+# One-to-one static NAT
+ASR1001X-WAN(config)# ip nat inside source static 10.1.1.10 203.0.113.10
+
+# Static NAT with port mapping
+ASR1001X-WAN(config)# ip nat inside source static tcp 10.1.1.20 80 203.0.113.11 80
+ASR1001X-WAN(config)# ip nat inside source static tcp 10.1.1.20 443 203.0.113.11 443
+
+10.3 NAT Pool
+--------------
+
+# Define NAT pool
+ASR1001X-WAN(config)# ip nat pool PUBLIC-POOL 203.0.113.20 203.0.113.30 netmask 255.255.255.0
+
+# Use NAT pool
+ASR1001X-WAN(config)# access-list 10 permit 10.10.0.0 0.0.255.255
+ASR1001X-WAN(config)# ip nat inside source list 10 pool PUBLIC-POOL overload
+
+================================================================================
+11. ACCESS CONTROL LISTS (ACLs)
+================================================================================
+
+11.1 Standard ACLs
+-------------------
+
+# Standard numbered ACL
+ASR1001X-WAN(config)# access-list 10 permit 10.1.1.0 0.0.0.255
+ASR1001X-WAN(config)# access-list 10 deny any
+
+# Standard named ACL
+ASR1001X-WAN(config)# ip access-list standard MANAGEMENT-ACCESS
+ASR1001X-WAN(config-std-nacl)# permit 192.168.1.0 0.0.0.255
+ASR1001X-WAN(config-std-nacl)# permit host 10.10.10.10
+ASR1001X-WAN(config-std-nacl)# deny any log
+ASR1001X-WAN(config-std-nacl)# exit
+
+# Apply to VTY lines
+ASR1001X-WAN(config)# line vty 0 4
+ASR1001X-WAN(config-line)# access-class MANAGEMENT-ACCESS in
+ASR1001X-WAN(config-line)# exit
+
+11.2 Extended ACLs
+-------------------
+
+# Extended numbered ACL
+ASR1001X-WAN(config)# access-list 100 permit tcp 10.1.1.0 0.0.0.255 any eq 80
+ASR1001X-WAN(config)# access-list 100 permit tcp 10.1.1.0 0.0.0.255 any eq 443
+ASR1001X-WAN(config)# access-list 100 deny ip any any log
+
+# Extended named ACL
+ASR1001X-WAN(config)# ip access-list extended INTERNET-FILTER
+ASR1001X-WAN(config-ext-nacl)# remark Allow HTTP and HTTPS
+ASR1001X-WAN(config-ext-nacl)# permit tcp any any eq 80
+ASR1001X-WAN(config-ext-nacl)# permit tcp any any eq 443
+ASR1001X-WAN(config-ext-nacl)# remark Allow DNS
+ASR1001X-WAN(config-ext-nacl)# permit udp any any eq 53
+ASR1001X-WAN(config-ext-nacl)# remark Allow established connections
+ASR1001X-WAN(config-ext-nacl)# permit tcp any any established
+ASR1001X-WAN(config-ext-nacl)# deny ip any any log
+ASR1001X-WAN(config-ext-nacl)# exit
+
+# Apply to interface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# ip access-group INTERNET-FILTER in
+ASR1001X-WAN(config-if)# exit
+
+11.3 Time-Based ACLs
+---------------------
+
+# Define time range
+ASR1001X-WAN(config)# time-range BUSINESS-HOURS
+ASR1001X-WAN(config-time-range)# periodic weekdays 8:00 to 17:00
+ASR1001X-WAN(config-time-range)# exit
+
+# ACL with time range
+ASR1001X-WAN(config)# ip access-list extended TIME-BASED-ACCESS
+ASR1001X-WAN(config-ext-nacl)# permit tcp 10.1.1.0 0.0.0.255 any eq 80 time-range BUSINESS-HOURS
+ASR1001X-WAN(config-ext-nacl)# deny ip any any
+ASR1001X-WAN(config-ext-nacl)# exit
+
+================================================================================
+12. IPSEC VPN CONFIGURATION
+================================================================================
+
+12.1 Site-to-Site IPsec VPN
+----------------------------
+
+# ISAKMP (IKE Phase 1) Policy
+ASR1001X-WAN(config)# crypto isakmp policy 10
+ASR1001X-WAN(config-isakmp)# encryption aes 256
+ASR1001X-WAN(config-isakmp)# hash sha256
+ASR1001X-WAN(config-isakmp)# authentication pre-share
+ASR1001X-WAN(config-isakmp)# group 14
+ASR1001X-WAN(config-isakmp)# lifetime 86400
+ASR1001X-WAN(config-isakmp)# exit
+
+# Pre-shared key
+ASR1001X-WAN(config)# crypto isakmp key StrongVPNKey123! address 198.51.100.1
+
+# IPsec Transform Set (IKE Phase 2)
+ASR1001X-WAN(config)# crypto ipsec transform-set AES256-SHA256 esp-aes 256 esp-sha256-hmac
+ASR1001X-WAN(cfg-crypto-trans)# mode tunnel
+ASR1001X-WAN(cfg-crypto-trans)# exit
+
+# Crypto ACL (interesting traffic)
+ASR1001X-WAN(config)# access-list 110 permit ip 10.1.0.0 0.0.255.255 10.2.0.0 0.0.255.255
+
+# Crypto Map
+ASR1001X-WAN(config)# crypto map VPN-MAP 10 ipsec-isakmp
+ASR1001X-WAN(config-crypto-map)# set peer 198.51.100.1
+ASR1001X-WAN(config-crypto-map)# set transform-set AES256-SHA256
+ASR1001X-WAN(config-crypto-map)# match address 110
+ASR1001X-WAN(config-crypto-map)# exit
+
+# Apply crypto map to interface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# crypto map VPN-MAP
+ASR1001X-WAN(config-if)# exit
+
+12.2 IKEv2 Configuration (Recommended)
+---------------------------------------
+
+# IKEv2 proposal
+ASR1001X-WAN(config)# crypto ikev2 proposal IKEV2-PROPOSAL
+ASR1001X-WAN(config-ikev2-proposal)# encryption aes-cbc-256
+ASR1001X-WAN(config-ikev2-proposal)# integrity sha256
+ASR1001X-WAN(config-ikev2-proposal)# group 14
+ASR1001X-WAN(config-ikev2-proposal)# exit
+
+# IKEv2 policy
+ASR1001X-WAN(config)# crypto ikev2 policy IKEV2-POLICY
+ASR1001X-WAN(config-ikev2-policy)# proposal IKEV2-PROPOSAL
+ASR1001X-WAN(config-ikev2-policy)# exit
+
+# IKEv2 keyring
+ASR1001X-WAN(config)# crypto ikev2 keyring IKEV2-KEYRING
+ASR1001X-WAN(config-ikev2-keyring)# peer BRANCH-SITE
+ASR1001X-WAN(config-ikev2-keyring-peer)# address 198.51.100.1
+ASR1001X-WAN(config-ikev2-keyring-peer)# pre-shared-key local StrongKey123!
+ASR1001X-WAN(config-ikev2-keyring-peer)# pre-shared-key remote StrongKey123!
+ASR1001X-WAN(config-ikev2-keyring-peer)# exit
+ASR1001X-WAN(config-ikev2-keyring)# exit
+
+# IKEv2 profile
+ASR1001X-WAN(config)# crypto ikev2 profile IKEV2-PROFILE
+ASR1001X-WAN(config-ikev2-profile)# match identity remote address 198.51.100.1 255.255.255.255
+ASR1001X-WAN(config-ikev2-profile)# authentication local pre-share
+ASR1001X-WAN(config-ikev2-profile)# authentication remote pre-share
+ASR1001X-WAN(config-ikev2-profile)# keyring local IKEV2-KEYRING
+ASR1001X-WAN(config-ikev2-profile)# exit
+
+# IPsec profile
+ASR1001X-WAN(config)# crypto ipsec profile IPSEC-PROFILE
+ASR1001X-WAN(ipsec-profile)# set transform-set AES256-SHA256
+ASR1001X-WAN(ipsec-profile)# set ikev2-profile IKEV2-PROFILE
+ASR1001X-WAN(ipsec-profile)# exit
+
+# Tunnel interface
+ASR1001X-WAN(config)# interface Tunnel0
+ASR1001X-WAN(config-if)# description IPsec Tunnel to Branch
+ASR1001X-WAN(config-if)# ip address 172.16.0.1 255.255.255.252
+ASR1001X-WAN(config-if)# tunnel source GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# tunnel destination 198.51.100.1
+ASR1001X-WAN(config-if)# tunnel mode ipsec ipv4
+ASR1001X-WAN(config-if)# tunnel protection ipsec profile IPSEC-PROFILE
+ASR1001X-WAN(config-if)# exit
+
+================================================================================
+13. QUALITY OF SERVICE (QoS)
+================================================================================
+
+13.1 MQC (Modular QoS CLI) Configuration
+-----------------------------------------
+
+# Class maps (classification)
+ASR1001X-WAN(config)# class-map match-any VOICE
+ASR1001X-WAN(config-cmap)# match dscp ef
+ASR1001X-WAN(config-cmap)# match protocol rtp audio
+ASR1001X-WAN(config-cmap)# exit
+
+ASR1001X-WAN(config)# class-map match-any VIDEO
+ASR1001X-WAN(config-cmap)# match dscp af41
+ASR1001X-WAN(config-cmap)# exit
+
+ASR1001X-WAN(config)# class-map match-any CRITICAL-DATA
+ASR1001X-WAN(config-cmap)# match dscp af31
+ASR1001X-WAN(config-cmap)# exit
+
+# Policy map (actions)
+ASR1001X-WAN(config)# policy-map WAN-EGRESS
+ASR1001X-WAN(config-pmap)# class VOICE
+ASR1001X-WAN(config-pmap-c)# priority percent 30
+ASR1001X-WAN(config-pmap-c)# exit
+ASR1001X-WAN(config-pmap)# class VIDEO
+ASR1001X-WAN(config-pmap-c)# bandwidth percent 30
+ASR1001X-WAN(config-pmap-c)# exit
+ASR1001X-WAN(config-pmap)# class CRITICAL-DATA
+ASR1001X-WAN(config-pmap-c)# bandwidth percent 20
+ASR1001X-WAN(config-pmap-c)# exit
+ASR1001X-WAN(config-pmap)# class class-default
+ASR1001X-WAN(config-pmap-c)# fair-queue
+ASR1001X-WAN(config-pmap-c)# random-detect
+ASR1001X-WAN(config-pmap-c)# exit
+ASR1001X-WAN(config-pmap)# exit
+
+# Apply service policy to interface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# service-policy output WAN-EGRESS
+ASR1001X-WAN(config-if)# exit
+
+13.2 Traffic Shaping
+---------------------
+
+# Shaping policy
+ASR1001X-WAN(config)# policy-map SHAPE-10M
+ASR1001X-WAN(config-pmap)# class class-default
+ASR1001X-WAN(config-pmap-c)# shape average 10000000
+ASR1001X-WAN(config-pmap-c)# service-policy WAN-EGRESS
+ASR1001X-WAN(config-pmap-c)# exit
+ASR1001X-WAN(config-pmap)# exit
+
+# Apply to interface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# service-policy output SHAPE-10M
+ASR1001X-WAN(config-if)# exit
+
+================================================================================
+14. HIGH AVAILABILITY FEATURES
+================================================================================
+
+14.1 HSRP (Hot Standby Router Protocol)
+----------------------------------------
+
+# Configure HSRP
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-if)# ip address 10.1.1.2 255.255.255.0
+ASR1001X-WAN(config-if)# standby 1 ip 10.1.1.1
+ASR1001X-WAN(config-if)# standby 1 priority 110
+ASR1001X-WAN(config-if)# standby 1 preempt
+ASR1001X-WAN(config-if)# standby 1 authentication md5 key-string HSRPSecret123
+ASR1001X-WAN(config-if)# standby 1 track GigabitEthernet0/0/0 30
+ASR1001X-WAN(config-if)# exit
+
+14.2 Object Tracking
+---------------------
+
+# Track interface line protocol
+ASR1001X-WAN(config)# track 10 interface GigabitEthernet0/0/0 line-protocol
+
+# Track IP route reachability
+ASR1001X-WAN(config)# track 20 ip route 0.0.0.0 0.0.0.0 reachability
+
+# Use tracking with HSRP
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/2
+ASR1001X-WAN(config-if)# standby 1 track 10 decrement 20
+ASR1001X-WAN(config-if)# exit
+
+================================================================================
+15. LOGGING AND MONITORING
+================================================================================
+
+15.1 Logging Configuration
+---------------------------
+
+# Configure logging
+ASR1001X-WAN(config)# logging buffered 51200 informational
+ASR1001X-WAN(config)# logging console warnings
+ASR1001X-WAN(config)# logging monitor informational
+ASR1001X-WAN(config)# logging trap notifications
+ASR1001X-WAN(config)# logging source-interface Loopback0
+
+# Logging server
+ASR1001X-WAN(config)# logging host 10.10.10.50
+ASR1001X-WAN(config)# logging host 10.10.10.51
+
+# Timestamp configuration
+ASR1001X-WAN(config)# service timestamps log datetime msec localtime show-timezone
+ASR1001X-WAN(config)# service timestamps debug datetime msec localtime show-timezone
+
+15.2 SNMP Configuration
+------------------------
+
+# SNMPv2c configuration
+ASR1001X-WAN(config)# snmp-server community PublicRO RO 99
+ASR1001X-WAN(config)# snmp-server community PrivateRW RW 99
+ASR1001X-WAN(config)# snmp-server location DataCenter-Building-A
+ASR1001X-WAN(config)# snmp-server contact netops@example.com
+
+# SNMP ACL
+ASR1001X-WAN(config)# access-list 99 permit 10.10.10.0 0.0.0.255
+
+# SNMP traps
+ASR1001X-WAN(config)# snmp-server enable traps snmp linkdown linkup
+ASR1001X-WAN(config)# snmp-server enable traps config
+ASR1001X-WAN(config)# snmp-server host 10.10.10.60 version 2c PublicRO
+
+15.3 NetFlow Configuration
+---------------------------
+
+# Configure NetFlow
+ASR1001X-WAN(config)# ip flow-export source Loopback0
+ASR1001X-WAN(config)# ip flow-export version 9
+ASR1001X-WAN(config)# ip flow-export destination 10.10.10.70 2055
+
+# Enable NetFlow on interface
+ASR1001X-WAN(config)# interface GigabitEthernet0/0/0
+ASR1001X-WAN(config-if)# ip flow ingress
+ASR1001X-WAN(config-if)# ip flow egress
+ASR1001X-WAN(config-if)# exit
+
+================================================================================
+16. NTP CONFIGURATION
+================================================================================
+
+# Configure NTP
+ASR1001X-WAN(config)# ntp server 129.6.15.28
+ASR1001X-WAN(config)# ntp server 132.163.97.1
+
+# NTP authentication
+ASR1001X-WAN(config)# ntp authenticate
+ASR1001X-WAN(config)# ntp authentication-key 1 md5 NTPSecret123
+ASR1001X-WAN(config)# ntp trusted-key 1
+ASR1001X-WAN(config)# ntp server 10.10.10.100 key 1
+
+# Set timezone
+ASR1001X-WAN(config)# clock timezone PST -8
+ASR1001X-WAN(config)# clock summer-time PDT recurring
+
+# NTP source interface
+ASR1001X-WAN(config)# ntp source Loopback0
+
+================================================================================
+17. VERIFICATION COMMANDS
+================================================================================
+
+# Interface status
+show interfaces
+show interfaces status
+show ip interface brief
+show interfaces description
+
+# IP routing
+show ip route
+show ip route summary
+show ip route ospf
+show ip route bgp
+show ip protocols
+
+# OSPF verification
+show ip ospf neighbor
+show ip ospf interface
+show ip ospf database
+show ip ospf border-routers
+
+# BGP verification
+show ip bgp summary
+show ip bgp neighbors
+show ip bgp
+show ip bgp neighbors <ip> advertised-routes
+show ip bgp neighbors <ip> routes
+
+# VRF verification
+show ip vrf
+show ip vrf interfaces
+show ip route vrf CUSTOMER-A
+
+# NAT verification
+show ip nat translations
+show ip nat statistics
+
+# ACL verification
+show access-lists
+show ip access-lists
+
+# IPsec VPN verification
+show crypto isakmp sa
+show crypto ipsec sa
+show crypto session
+
+# QoS verification
+show policy-map interface GigabitEthernet0/0/0
+
+# System information
+show version
+show inventory
+show platform
+show processes cpu
+show memory statistics
+
+# Environmental
+show environment all
+show environment power
+show environment temperature
+
+================================================================================
+REFERENCES AND DOCUMENTATION
+================================================================================
+
+1. Cisco ASR 1000 Series Documentation
+   - ASR 1000 Series Aggregation Services Routers Data Sheet
+     https://www.cisco.com/c/en/us/products/routers/asr-1000-series/
+   - ASR 1001-X Router Data Sheet
+   - ASR 1000 Series Software Configuration Guide
+     https://www.cisco.com/c/en/us/support/routers/asr-1000-series/
+
+2. Cisco IOS-XE Documentation
+   - IOS-XE Configuration Guides
+     https://www.cisco.com/c/en/us/support/ios-nx-os-software/ios-xe-17/
+   - IOS-XE Command Reference
+   - IOS-XE Release Notes
+
+3. Routing Protocol Documentation
+   - OSPF Configuration Guide
+   - EIGRP Configuration Guide
+   - BGP Configuration Guide
+   - Cisco Routing Protocol Configuration Guides
+
+4. VPN and Security
+   - IPsec VPN Configuration Guide
+   - IKEv2 Configuration Guide
+   - Zone-Based Firewall Configuration
+
+5. QoS Documentation
+   - QoS Configuration Guide
+   - MQC Configuration Examples
+   - Traffic Shaping and Policing Guide
+
+6. High Availability
+   - HSRP Configuration Guide
+   - Object Tracking Configuration
+   - Redundancy Features
+
+7. Books
+   - "Cisco IOS XE Configuration Fundamentals" (Cisco Press)
+   - "CCNP and CCIE Enterprise Core ENCOR 350-401 Official Cert Guide"
+   - "Routing TCP/IP, Volume I and II" by Jeff Doyle
+
+8. Training and Certification
+   - Cisco CCNA certification
+   - Cisco CCNP Enterprise certification
+   - Cisco Certified Specialist - Enterprise Advanced Infrastructure
+
+================================================================================
+CONFIGURATION BEST PRACTICES
+================================================================================
+
+☐ Initial Configuration
+  ☐ Set descriptive hostname
+  ☐ Configure management interface
+  ☐ Enable SSH with strong encryption
+  ☐ Disable unused services
+  ☐ Configure NTP
+  ☐ Set timezone
+
+☐ Security
+  ☐ Use strong passwords (minimum 12 characters)
+  ☐ Enable service password-encryption
+  ☐ Configure enable secret (not enable password)
+  ☐ Use SSH version 2 only
+  ☐ Apply ACLs to VTY lines
+  ☐ Configure login banners
+
+☐ Interface Configuration
+  ☐ Use descriptive descriptions on all interfaces
+  ☐ Configure appropriate MTU
+  ☐ Use subinterfaces for VLANs where applicable
+  ☐ Disable unused interfaces
+
+☐ Routing
+  ☐ Use loopback for router ID
+  ☐ Configure authentication for routing protocols
+  ☐ Use passive interfaces by default
+  ☐ Document routing policies
+
+☐ High Availability
+  ☐ Configure redundant power supplies
+  ☐ Use HSRP/VRRP for gateway redundancy
+  ☐ Configure object tracking
+  ☐ Test failover scenarios
+
+☐ Monitoring
+  ☐ Configure syslog server
+  ☐ Enable SNMP monitoring
+  ☐ Configure NetFlow for traffic analysis
+  ☐ Set up alerts for critical events
+
+☐ Backup and Documentation
+  ☐ Regular configuration backups
+  ☐ Document all changes
+  ☐ Maintain network diagrams
+  ☐ Keep running config and startup config in sync
+
+================================================================================
+END OF DOCUMENT
+================================================================================
